@@ -21,3 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/ThriceCola/hi-my-light/main/install
 ```
 
 **Windows amd64**
+
+```powershell
+irm https://raw.githubusercontent.com/ThriceCola/hi-my-light/main/install.ps1 | iex
+```

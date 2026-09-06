@@ -118,12 +118,9 @@ impl Session {
         let dir = {
             #[cfg(windows)]
             {
-                std::env::var_os("LOCALAPPDATA")
-                    .map(PathBuf::from)
-                    .or_else(|| {
-                        std::env::var_os("USERPROFILE")
-                            .map(|home| PathBuf::from(home).join("AppData").join("Local"))
-                    })
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|exe| exe.parent().map(PathBuf::from))
                     .unwrap_or_else(|| PathBuf::from("."))
             }
             #[cfg(not(windows))]
@@ -137,7 +134,14 @@ impl Session {
                     .unwrap_or_else(|| PathBuf::from("."))
             }
         };
-        dir.join("hi-my-light").join("session.json")
+        #[cfg(windows)]
+        {
+            dir.join("session.json")
+        }
+        #[cfg(not(windows))]
+        {
+            dir.join("hi-my-light").join("session.json")
+        }
     }
 
     pub fn load() -> Self {

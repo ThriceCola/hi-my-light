@@ -30,6 +30,7 @@ pub fn halo_rgba(size: u32) -> RgbaImage {
     img
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn halo_png(size: u32) -> Result<Vec<u8>, image::ImageError> {
     let img = halo_rgba(size);
     let mut buf = Vec::new();
@@ -45,6 +46,7 @@ pub fn halo_ico(size: u32) -> Result<Vec<u8>, image::ImageError> {
     Ok(buf)
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub const HALO_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <defs>
     <radialGradient id="halo" cx="50%" cy="50%" r="50%">

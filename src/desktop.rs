@@ -11,19 +11,67 @@ pub fn start_hidden() -> bool {
 
 pub fn install_title(installed: bool) -> &'static str {
     if installed {
-        "重新安装到开始菜单"
+        #[cfg(windows)]
+        {
+            "重新安装到开始菜单"
+        }
+        #[cfg(target_os = "linux")]
+        {
+            "重新安装到应用菜单"
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            "重新安装"
+        }
     } else {
-        "安装到开始菜单"
+        #[cfg(windows)]
+        {
+            "安装到开始菜单"
+        }
+        #[cfg(target_os = "linux")]
+        {
+            "安装到应用菜单"
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            "安装"
+        }
+    }
+}
+
+pub fn install_done_status() -> &'static str {
+    #[cfg(windows)]
+    {
+        "已加入开始菜单"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "已加入应用菜单"
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        "已安装"
     }
 }
 
 pub fn install_hint(installed: bool) -> &'static str {
     if installed {
-        "已加入本机开始菜单，点这里可覆盖更新"
+        #[cfg(windows)]
+        {
+            "已加入开始菜单快捷方式，点这里可更新"
+        }
+        #[cfg(target_os = "linux")]
+        {
+            "已加入本机应用菜单，点这里可覆盖更新"
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            "已安装，点这里可覆盖更新"
+        }
     } else {
         #[cfg(windows)]
         {
-            "复制到用户目录，并加入开始菜单"
+            "不复制文件，只在开始菜单放快捷方式"
         }
         #[cfg(target_os = "linux")]
         {
@@ -235,14 +283,15 @@ mod win {
     use super::*;
     use std::os::windows::ffi::OsStrExt;
 
-    fn local_app_data() -> PathBuf {
-        std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("USERPROFILE")
-                    .map(|home| PathBuf::from(home).join("AppData").join("Local"))
-            })
+    fn exe_dir() -> PathBuf {
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(PathBuf::from))
             .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    fn current_exe() -> PathBuf {
+        std::env::current_exe().unwrap_or_else(|_| exe_dir().join(format!("{APP_ID}.exe")))
     }
 
     fn roaming_app_data() -> PathBuf {
@@ -256,7 +305,7 @@ mod win {
     }
 
     pub fn bin_path() -> PathBuf {
-        local_app_data().join(APP_ID).join(format!("{APP_ID}.exe"))
+        current_exe()
     }
 
     pub fn menu_entry_path() -> PathBuf {
@@ -272,15 +321,15 @@ mod win {
     }
 
     pub fn is_menu_installed() -> bool {
-        bin_path().is_file() && (menu_entry_path().is_file() || menu_bat_path().is_file())
+        menu_entry_path().is_file() || menu_bat_path().is_file()
     }
 
     fn icon_ico_path() -> PathBuf {
-        local_app_data().join(APP_ID).join(format!("{APP_ID}.ico"))
+        exe_dir().join(format!("{APP_ID}.ico"))
     }
 
     pub fn install_user() -> io::Result<PathBuf> {
-        let exec = copy_current_binary(&bin_path())?;
+        let exec = current_exe();
         let ico = crate::icon::halo_ico(256).map_err(io::Error::other)?;
         write_file(&icon_ico_path(), &ico)?;
         if create_shortcut(&menu_entry_path(), &exec, &icon_ico_path()).is_err() {
@@ -295,16 +344,7 @@ mod win {
     }
 
     pub fn sync_autostart(enabled: bool) -> io::Result<()> {
-        let exec = if enabled {
-            if bin_path().is_file() {
-                bin_path()
-            } else {
-                install_user()?
-            }
-        } else {
-            bin_path()
-        };
-        set_run_key(enabled, &exec)
+        set_run_key(enabled, &current_exe())
     }
 
     fn ps_single_quote(path: &Path) -> String {

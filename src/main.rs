@@ -1,5 +1,7 @@
 //! hi-my-light
 
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod bridge;
 mod chrome;
 mod desktop;
@@ -25,10 +27,16 @@ use workspace::Workspace;
 actions!(hi_my_light, [Quit, OpenDevices, ShowHome, OpenSettings]);
 
 fn main() {
+    #[cfg(windows)]
+    attach_cli_console();
+
+    #[cfg(windows)]
+    set_app_user_model_id();
+
     if std::env::args().any(|arg| arg == "--install") {
         match desktop::install_user() {
             Ok(exec) => {
-                println!("已安装到应用菜单");
+                println!("{}", desktop::install_done_status());
                 println!("可执行文件: {}", exec.display());
                 println!("快捷方式: {}", desktop::menu_entry_path().display());
             }
@@ -132,4 +140,38 @@ fn main() {
             cx.activate(true);
         }
     });
+}
+
+#[cfg(windows)]
+fn attach_cli_console() {
+    let cli = std::env::args().any(|arg| {
+        matches!(
+            arg.as_str(),
+            "--install" | "--simulate-shutdown" | "--help" | "-h"
+        )
+    });
+    unsafe {
+        use windows_sys::Win32::System::Console::{
+            ATTACH_PARENT_PROCESS, AttachConsole, FreeConsole, GetConsoleWindow,
+        };
+        use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, ShowWindow};
+
+        if cli {
+            AttachConsole(ATTACH_PARENT_PROCESS);
+            return;
+        }
+        let hwnd = GetConsoleWindow();
+        if !hwnd.is_null() {
+            ShowWindow(hwnd, SW_HIDE);
+            FreeConsole();
+        }
+    }
+}
+
+#[cfg(windows)]
+fn set_app_user_model_id() {
+    let id: Vec<u16> = "ThriceCola.HiMyLight\0".encode_utf16().collect();
+    unsafe {
+        let _ = windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID(id.as_ptr());
+    }
 }

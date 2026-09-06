@@ -2782,6 +2782,7 @@ dependencies = [
  "anyhow",
  "btleplug",
  "ctrlc",
+ "embed-resource",
  "futures-lite 2.6.1",
  "gpui",
  "gpui_platform",

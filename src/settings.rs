@@ -125,7 +125,7 @@ impl Render for SettingsView {
                                         if service.autostart {
                                             let _ = desktop::sync_autostart(true);
                                         }
-                                        service.status = "已加入应用菜单".into();
+                                        service.status = desktop::install_done_status().into();
                                         cx.notify();
                                     });
                                 }

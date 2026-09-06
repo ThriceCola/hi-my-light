@@ -9,6 +9,7 @@ use crate::session::Session;
 static REQUESTED: AtomicBool = AtomicBool::new(false);
 static SENT_CMD: AtomicBool = AtomicBool::new(false);
 static WANT_INHIBIT: AtomicBool = AtomicBool::new(false);
+#[cfg(unix)]
 static GOT_TERM: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone)]
@@ -346,12 +347,16 @@ fn install_win_session() {
 }
 
 #[cfg(windows)]
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn win_message_loop() {
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::System::Shutdown::{
+        ShutdownBlockReasonCreate, ShutdownBlockReasonDestroy,
+    };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, HWND_MESSAGE, MSG,
-        RegisterClassW, TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_ENDSESSION,
-        WM_QUERYENDSESSION, WNDCLASSW,
+        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, MSG, RegisterClassW,
+        TranslateMessage, WM_ENDSESSION, WM_QUERYENDSESSION, WNDCLASSW, WS_EX_TOOLWINDOW,
+        WS_POPUP,
     };
 
     unsafe extern "system" fn wndproc(
@@ -360,12 +365,11 @@ unsafe fn win_message_loop() {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
-        if msg == WM_QUERYENDSESSION {
+        if msg == WM_QUERYENDSESSION || msg == WM_ENDSESSION {
+            let reason: Vec<u16> = "正在关灯\0".encode_utf16().collect();
+            let _ = ShutdownBlockReasonCreate(hwnd, reason.as_ptr());
             request();
-            return 1;
-        }
-        if msg == WM_ENDSESSION {
-            request();
+            let _ = ShutdownBlockReasonDestroy(hwnd);
             return 1;
         }
         unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
@@ -385,25 +389,29 @@ unsafe fn win_message_loop() {
         lpszClassName: class_name.as_ptr(),
     };
     if RegisterClassW(&wc) == 0 {
+        log_line("注册关机窗口类失败");
         return;
     }
+    // 必须是顶层窗口：HWND_MESSAGE 收不到 WM_QUERYENDSESSION 广播。
     let hwnd = CreateWindowExW(
-        WINDOW_EX_STYLE::default(),
+        WS_EX_TOOLWINDOW,
         class_name.as_ptr(),
         class_name.as_ptr(),
-        WINDOW_STYLE::default(),
+        WS_POPUP,
         0,
         0,
         0,
         0,
-        HWND_MESSAGE,
+        std::ptr::null_mut(),
         std::ptr::null_mut(),
         std::ptr::null_mut(),
         std::ptr::null(),
     );
     if hwnd.is_null() {
+        log_line("创建关机监听窗口失败");
         return;
     }
+    log_line("已监听系统关机");
     let mut msg = std::mem::zeroed::<MSG>();
     while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
         TranslateMessage(&msg);
