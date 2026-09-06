@@ -43,6 +43,20 @@ curl -fsSL https://raw.githubusercontent.com/ThriceCola/hi-my-light/main/install
 irm https://raw.githubusercontent.com/ThriceCola/hi-my-light/main/install.ps1 | iex
 ```
 
+## 卸载
+
+### Linux amd64
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ThriceCola/hi-my-light/main/uninstall.sh | bash
+```
+
+### Windows amd64
+
+```powershell
+irm https://raw.githubusercontent.com/ThriceCola/hi-my-light/main/uninstall.ps1 | iex
+```
+
 # 声明
 
 - 本项目仅供 学习、研究与技术交流，严禁用于任何商业、违法场景。
