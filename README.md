@@ -11,7 +11,6 @@
 如果你也是相同设备的话，那就一起用一下吧
 
 ![img](docs/img/ahomepage.png)
-![img](docs/img/bhomepage.png)
 
 # 使用方法
 
@@ -29,11 +28,14 @@
 
 ### Linux amd64
 
-在想要安装的目录打开终端运行以下命令
+打开终端运行以下命令
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ThriceCola/hi-my-light/main/install.sh | bash
 ```
+
+软件会被安装到
+$HOME/.local/bin/hi-my-light
 
 ### Windows amd64
 
