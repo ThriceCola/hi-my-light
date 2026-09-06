@@ -1,0 +1,48 @@
+[package]
+name = "hi-my-light"
+version = "0.1.0"
+edition = "2024"
+default-run = "hi-my-light"
+
+[lib]
+name = "hi_my_light"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hi-my-light"
+path = "src/main.rs"
+
+[[bin]]
+name = "cli"
+path = "src/bin/cli.rs"
+
+[dependencies]
+anyhow = "1"
+btleplug = "0.10"
+hex-literal = "1"
+phf = { version = "0.11", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+uuid = "1"
+
+gpui = { git = "https://github.com/zed-industries/zed", rev = "b7b1d1a2c78baae9d51a326c9221ee2ffb60726e" }
+image = "0.25"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ctrlc = "3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "b7b1d1a2c78baae9d51a326c9221ee2ffb60726e", features = ["font-kit", "x11", "wayland"] }
+ksni = { version = "0.3", default-features = false, features = ["tokio"] }
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+futures-lite = "2"
+
+[target.'cfg(windows)'.dependencies]
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "b7b1d1a2c78baae9d51a326c9221ee2ffb60726e" }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Registry",
+    "Win32_UI_WindowsAndMessaging",
+] }
