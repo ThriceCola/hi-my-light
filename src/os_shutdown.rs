@@ -7,8 +7,9 @@ use crate::bridge::BleCmd;
 use crate::session::Session;
 
 static REQUESTED: AtomicBool = AtomicBool::new(false);
-static SENT_CMD: AtomicBool = AtomicBool::new(false);
 static WANT_INHIBIT: AtomicBool = AtomicBool::new(false);
+static OFF_ONCE: hi_my_light::shutdown_once::ShutdownOnce =
+    hi_my_light::shutdown_once::ShutdownOnce::new();
 #[cfg(unix)]
 static GOT_TERM: AtomicBool = AtomicBool::new(false);
 
@@ -47,33 +48,38 @@ pub fn update_snapshot(addr: Option<String>, off_on_shutdown: bool, lamp_on: boo
 }
 
 pub fn request() {
-    REQUESTED.store(true, Ordering::SeqCst);
-    let snap = SNAP.lock().expect("shutdown snapshot").clone();
-    let Some(snap) = snap else {
-        log_line("收到关机信号，但还没绑定设备状态");
-        return;
-    };
-    if !(snap.off_on_shutdown && snap.lamp_on) {
-        log_line("收到关机信号，设置里关灯已关或灯本来就是灭的");
-        return;
-    }
-    if SENT_CMD.swap(true, Ordering::SeqCst) {
-        return;
-    }
-    let mut session = Session::load();
-    session.restore_after_shutdown = true;
-    session.save();
-    let _ = snap
-        .cmd
-        .send(BleCmd::ShutdownOff(snap.addr.clone()));
-    match snap.addr {
-        Some(addr) => {
-            log_line(&format!("开始独立关灯 {addr}"));
-            let result = run_turn_off(&addr);
-            log_line(&format!("独立关灯结果: {result}"));
+    OFF_ONCE.with_lock(|| {
+        REQUESTED.store(true, Ordering::SeqCst);
+        if OFF_ONCE.already_started() {
+            return;
         }
-        None => log_line("没有记住的设备地址，无法关灯"),
-    }
+        let snap = SNAP.lock().expect("shutdown snapshot").clone();
+        let Some(snap) = snap else {
+            log_line("收到关机信号，但还没绑定设备状态");
+            return;
+        };
+        if !hi_my_light::shutdown_once::should_turn_off(snap.off_on_shutdown) {
+            log_line("收到关机信号，设置里关灯已关");
+            OFF_ONCE.mark_started();
+            return;
+        }
+        OFF_ONCE.mark_started();
+        let mut session = Session::load();
+        session.restore_after_shutdown = true;
+        session.save();
+        let _ = snap.cmd.send(BleCmd::ShutdownOff(snap.addr.clone()));
+        match snap.addr {
+            Some(addr) => {
+                log_line(&format!(
+                    "开始独立关灯 {addr} ui_lamp_on={}",
+                    snap.lamp_on
+                ));
+                let result = run_turn_off(&addr);
+                log_line(&format!("独立关灯结果: {result}"));
+            }
+            None => log_line("没有记住的设备地址，无法关灯"),
+        }
+    });
 }
 
 fn run_turn_off(addr: &str) -> String {
@@ -115,7 +121,7 @@ pub fn take() -> bool {
 }
 
 pub fn already_fired() -> bool {
-    SENT_CMD.load(Ordering::SeqCst)
+    OFF_ONCE.already_started()
 }
 
 pub fn log_path() -> std::path::PathBuf {
@@ -311,7 +317,7 @@ async fn watch_logind() {
                     delay_fd = None;
                 }
                 let want = WANT_INHIBIT.load(Ordering::SeqCst);
-                if want && delay_fd.is_none() && !SENT_CMD.load(Ordering::SeqCst) {
+                if want && delay_fd.is_none() && !OFF_ONCE.already_started() {
                     delay_fd = take_inhibit(&proxy).await;
                 } else if !want {
                     delay_fd = None;

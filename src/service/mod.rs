@@ -147,8 +147,7 @@ impl LampService {
         self.retry_at = None;
         self.pending = Pending::default();
 
-        let lamp_was_on = self.off_on_shutdown && (self.front.on || self.rear.on);
-        if lamp_was_on {
+        if self.off_on_shutdown {
             self.restore_after_shutdown = true;
             self.front.extinguish();
             self.rear.extinguish();
@@ -158,7 +157,6 @@ impl LampService {
             }
             self.shutdown_quit_at = Some(Instant::now() + Duration::from_millis(4000));
         } else {
-            self.restore_after_shutdown = false;
             self.status = "系统关机".into();
             self.shutdown_quit_at = Some(Instant::now() + Duration::from_millis(120));
         }
@@ -241,11 +239,20 @@ impl LampService {
     }
 
     pub fn persist(&self) {
+        self.persist_session(false);
+    }
+
+    fn persist_session(&self, clear_restore: bool) {
+        let disk = Session::load();
         Session {
             last_addr: self.remembered_addr.clone(),
             last_name: self.connected_name.clone(),
             close_preference: self.close_preference,
-            restore_after_shutdown: self.restore_after_shutdown,
+            restore_after_shutdown: hi_my_light::shutdown_once::restore_flag_to_write(
+                disk.restore_after_shutdown,
+                self.restore_after_shutdown,
+                clear_restore,
+            ),
             autostart: self.autostart,
             off_on_shutdown: self.off_on_shutdown,
             front: FrontSnap::from_lamp(&self.front),
@@ -414,8 +421,12 @@ impl LampService {
     }
 
     fn restore_power(&mut self) {
-        self.arm_front();
-        self.arm_rear();
+        for frame in self.front.wake_frames() {
+            self.write(frame);
+        }
+        for frame in self.rear.wake_frames() {
+            self.write(frame);
+        }
     }
 
     fn write(&mut self, frame: Frame) {
@@ -434,13 +445,13 @@ impl LampService {
             match msg {
                 BleMsg::Ready => {
                     self.ready = true;
-                    if self.parked {
-                        self.status = "后台".into();
-                    } else if let Some(addr) = self.remembered_addr.clone() {
-                        if !self.connected() {
+                    if let Some(addr) = self.remembered_addr.clone() {
+                        if !self.connected() && (!self.parked || self.restore_after_shutdown) {
                             self.connecting = true;
                             self.status = "正在连接…".into();
                             self.send(BleCmd::Reconnect(addr));
+                        } else if self.parked {
+                            self.status = "后台".into();
                         }
                     } else {
                         self.status = "就绪".into();
@@ -462,25 +473,29 @@ impl LampService {
                     self.status = format!("发现 {} 台设备", self.devices.len()).into();
                 }
                 BleMsg::Connected { name, addr } => {
-                    if self.parked || self.shutting_down {
-                        self.send(BleCmd::Disconnect);
-                        continue;
-                    }
                     self.connecting = false;
                     self.retry_at = None;
                     self.remembered_addr = Some(addr.clone());
                     self.connected_name = Some(name.clone());
                     self.connected_addr = Some(addr);
                     self.status = format!("已连接 {name}").into();
-                    self.send(BleCmd::Handshake);
-                    if self.restore_after_shutdown {
+                    let restoring = self.restore_after_shutdown;
+                    if restoring {
                         self.restore_after_shutdown = false;
                         self.restore_power();
+                        self.persist_session(true);
                     } else {
                         self.front.sync_lit();
                         self.rear.sync_lit();
+                        self.persist();
                     }
-                    self.persist();
+                    if self.parked || self.shutting_down {
+                        if !restoring {
+                            self.send(BleCmd::Disconnect);
+                        }
+                        continue;
+                    }
+                    self.send(BleCmd::Handshake);
                 }
                 BleMsg::Disconnected => {
                     self.connecting = false;

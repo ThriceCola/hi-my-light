@@ -81,16 +81,26 @@ pub fn spawn_worker() -> (Sender<BleCmd>, Receiver<BleMsg>) {
 }
 
 async fn run(cmd_rx: Receiver<BleCmd>, msg_tx: Sender<BleMsg>) {
-    let manager = match hi_my_light::BleManager::new().await {
-        Ok(m) => {
-            let _ = msg_tx.send(BleMsg::Ready);
-            m
+    let mut manager = None;
+    for attempt in 0..12 {
+        match hi_my_light::BleManager::new().await {
+            Ok(m) => {
+                manager = Some(m);
+                break;
+            }
+            Err(e) => {
+                if attempt == 11 {
+                    let _ = msg_tx.send(BleMsg::AdapterFailed(e.to_string()));
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
         }
-        Err(e) => {
-            let _ = msg_tx.send(BleMsg::AdapterFailed(e.to_string()));
-            return;
-        }
+    }
+    let Some(manager) = manager else {
+        return;
     };
+    let _ = msg_tx.send(BleMsg::Ready);
 
     let char_uuid = Uuid::parse_str(TARGET_CHAR_UUID).expect("静态 UUID");
 

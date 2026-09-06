@@ -5,6 +5,7 @@ pub mod error;
 pub mod manager;
 pub mod protocol;
 pub mod shutdown_off;
+pub mod shutdown_once;
 
 pub use device::{CharacteristicInfo, DeviceInfo};
 pub use error::BleError;
