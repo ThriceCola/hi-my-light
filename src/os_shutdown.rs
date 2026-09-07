@@ -5,13 +5,11 @@ use std::time::Duration;
 
 use crate::bridge::BleCmd;
 use crate::session::Session;
+use hi_my_light::shutdown_once;
 
 static REQUESTED: AtomicBool = AtomicBool::new(false);
 static WANT_INHIBIT: AtomicBool = AtomicBool::new(false);
-static OFF_ONCE: hi_my_light::shutdown_once::ShutdownOnce =
-    hi_my_light::shutdown_once::ShutdownOnce::new();
-#[cfg(unix)]
-static GOT_TERM: AtomicBool = AtomicBool::new(false);
+static OFF_ONCE: shutdown_once::ShutdownOnce = shutdown_once::ShutdownOnce::new();
 
 #[derive(Clone)]
 struct Snapshot {
@@ -58,7 +56,7 @@ pub fn request() {
             log_line("收到关机信号，但还没绑定设备状态");
             return;
         };
-        if !hi_my_light::shutdown_once::should_turn_off(snap.off_on_shutdown) {
+        if !shutdown_once::should_turn_off(snap.off_on_shutdown) {
             log_line("收到关机信号，设置里关灯已关");
             OFF_ONCE.mark_started();
             return;
@@ -67,8 +65,12 @@ pub fn request() {
         let mut session = Session::load();
         session.restore_after_shutdown = true;
         session.save();
-        let _ = snap.cmd.send(BleCmd::ShutdownOff(snap.addr.clone()));
-        match snap.addr {
+        let addr = shutdown_once::turn_off_addr(
+            snap.addr.as_deref(),
+            session.last_addr.as_deref(),
+        );
+        let _ = snap.cmd.send(BleCmd::ShutdownOff(addr.clone()));
+        match addr {
             Some(addr) => {
                 log_line(&format!(
                     "开始独立关灯 {addr} ui_lamp_on={}",
@@ -85,7 +87,7 @@ pub fn request() {
 fn run_turn_off(addr: &str) -> String {
     let work = async {
         match tokio::time::timeout(
-            Duration::from_secs(4),
+            Duration::from_secs(8),
             hi_my_light::shutdown_turn_off(addr),
         )
         .await
@@ -157,14 +159,10 @@ fn now_stamp() -> String {
 pub fn install() {
     let session = Session::load();
     WANT_INHIBIT.store(session.off_on_shutdown, Ordering::SeqCst);
-    let _ = ctrlc::set_handler(|| {
-        log_line("ctrlc 回调");
-        request();
-    });
     #[cfg(unix)]
-    install_term_handler();
+    block_shutdown_signals();
     #[cfg(unix)]
-    install_term_poller();
+    install_sigwait();
     #[cfg(target_os = "linux")]
     install_logind();
     #[cfg(windows)]
@@ -172,30 +170,36 @@ pub fn install() {
 }
 
 #[cfg(unix)]
-fn install_term_handler() {
+fn block_shutdown_signals() {
     unsafe {
-        libc::signal(libc::SIGTERM, term_handler as *const () as libc::sighandler_t);
-        libc::signal(libc::SIGINT, term_handler as *const () as libc::sighandler_t);
+        let mut set = std::mem::zeroed();
+        libc::sigemptyset(&mut set);
+        libc::sigaddset(&mut set, libc::SIGTERM);
+        libc::sigaddset(&mut set, libc::SIGINT);
+        libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
     }
 }
 
+/// 屏蔽 SIGTERM 后用 sigwait 收，避免 GPUI/GTK 长时间跑着把 handler 抢走。
 #[cfg(unix)]
-extern "C" fn term_handler(_: libc::c_int) {
-    GOT_TERM.store(true, Ordering::SeqCst);
-}
-
-#[cfg(unix)]
-fn install_term_poller() {
+fn install_sigwait() {
     std::thread::Builder::new()
-        .name("hml-sigterm".into())
-        .spawn(|| loop {
-            install_term_handler();
-            if GOT_TERM.swap(false, Ordering::SeqCst) {
+        .name("hml-sigwait".into())
+        .spawn(|| unsafe {
+            let mut set = std::mem::zeroed();
+            libc::sigemptyset(&mut set);
+            libc::sigaddset(&mut set, libc::SIGTERM);
+            libc::sigaddset(&mut set, libc::SIGINT);
+            loop {
+                let mut sig = 0;
+                if libc::sigwait(&set, &mut sig) != 0 {
+                    std::thread::sleep(Duration::from_millis(50));
+                    continue;
+                }
                 log_line("收到 SIGTERM/SIGINT");
                 request();
                 std::process::exit(0);
             }
-            std::thread::sleep(Duration::from_millis(40));
         })
         .ok();
 }
@@ -212,7 +216,7 @@ fn install_logind() {
                 log_line("logind runtime 创建失败");
                 return;
             };
-            rt.block_on(watch_logind());
+            rt.block_on(watch_logind_forever());
         })
         .ok();
 }
@@ -247,45 +251,65 @@ trait Login1Manager {
 }
 
 #[cfg(target_os = "linux")]
-async fn watch_logind() {
+async fn watch_logind_forever() {
+    let mut failures = 0u32;
+    loop {
+        match watch_logind_once().await {
+            WatchEnd::TurnedOff => return,
+            WatchEnd::Disconnected(reason) => {
+                if shutdown_once::logind_should_reconnect(true) {
+                    log_line(&format!("logind 断开，准备重连: {reason}"));
+                }
+                failures = failures.saturating_add(1);
+                let wait = Duration::from_millis(100 * u64::from(failures.min(10)));
+                tokio::time::sleep(wait).await;
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+enum WatchEnd {
+    TurnedOff,
+    Disconnected(String),
+}
+
+#[cfg(target_os = "linux")]
+async fn watch_logind_once() -> WatchEnd {
     use futures_lite::StreamExt;
 
     let Ok(conn) = zbus::Connection::system().await else {
-        log_line("连不上 system bus，关灯只能靠 SIGTERM");
-        return;
+        return WatchEnd::Disconnected("连不上 system bus".into());
     };
     let Ok(proxy) = Login1ManagerProxy::new(&conn).await else {
-        log_line("拿不到 logind Manager");
-        return;
+        return WatchEnd::Disconnected("拿不到 logind Manager".into());
     };
     let mut signals = match proxy.receive_prepare_for_shutdown().await {
         Ok(stream) => stream,
         Err(err) => {
-            log_line(&format!("订阅 PrepareForShutdown 失败: {err}"));
-            return;
+            return WatchEnd::Disconnected(format!("订阅 PrepareForShutdown 失败: {err}"));
         }
     };
     let mut signals_meta = proxy.receive_prepare_for_shutdown_with_metadata().await.ok();
 
     let mut delay_fd = take_inhibit(&proxy).await;
     if delay_fd.is_some() {
-        log_line("已申请 shutdown delay inhibit");
+        log_line("已申请 shutdown block inhibit");
     } else {
-        log_line("delay inhibit 未申请到（设置可能是关的，或 logind 拒绝）");
+        log_line("block inhibit 未申请到（设置可能是关的，或 logind 拒绝）");
     }
 
     loop {
         tokio::select! {
             signal = signals.next() => {
                 let Some(signal) = signal else {
-                    log_line("PrepareForShutdown 流结束");
-                    break;
+                    return WatchEnd::Disconnected("PrepareForShutdown 流结束".into());
                 };
                 if signal.args().map(|args| args.start).unwrap_or(false) {
                     log_line("收到 PrepareForShutdown");
                     request();
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                    delay_fd = None;
+                    delay_fd.take();
+                    return WatchEnd::TurnedOff;
                 }
             }
             signal = async {
@@ -298,27 +322,26 @@ async fn watch_logind() {
                     if signal.args().map(|args| args.start).unwrap_or(false) {
                         log_line("收到 PrepareForShutdownWithMetadata");
                         request();
-                        tokio::time::sleep(Duration::from_millis(500)).await;
-                        delay_fd = None;
+                        delay_fd.take();
+                        return WatchEnd::TurnedOff;
                     }
+                } else {
+                    signals_meta = None;
                 }
             }
-            _ = tokio::time::sleep(Duration::from_millis(400)) => {
-                install_term_handler();
-                if GOT_TERM.swap(false, Ordering::SeqCst) {
-                    log_line("logind 线程收到 SIGTERM/SIGINT");
-                    request();
-                    std::process::exit(0);
-                }
+            _ = tokio::time::sleep(Duration::from_millis(800)) => {
                 if proxy.preparing_for_shutdown().await.ok() == Some(true) {
                     log_line("轮询到 PreparingForShutdown=true");
                     request();
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                    delay_fd = None;
+                    delay_fd.take();
+                    return WatchEnd::TurnedOff;
                 }
                 let want = WANT_INHIBIT.load(Ordering::SeqCst);
                 if want && delay_fd.is_none() && !OFF_ONCE.already_started() {
                     delay_fd = take_inhibit(&proxy).await;
+                    if delay_fd.is_some() {
+                        log_line("已重新申请 shutdown block inhibit");
+                    }
                 } else if !want {
                     delay_fd = None;
                 }
@@ -333,7 +356,7 @@ async fn take_inhibit(proxy: &Login1ManagerProxy<'_>) -> Option<zbus::zvariant::
         return None;
     }
     match proxy
-        .inhibit("shutdown", "hi-my-light", "系统关机时关灯", "delay")
+        .inhibit("shutdown", "hi-my-light", "系统关机时关灯", "block")
         .await
     {
         Ok(fd) => Some(fd),

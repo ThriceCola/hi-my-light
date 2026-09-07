@@ -42,6 +42,25 @@ pub fn restore_flag_to_write(disk: bool, memory: bool, clear: bool) -> bool {
     }
 }
 
+/// 快照里没地址时（后台很久、绑定丢了）用 session 记住的灯。
+pub fn turn_off_addr(snap_addr: Option<&str>, session_addr: Option<&str>) -> Option<String> {
+    snap_addr
+        .map(str::trim)
+        .filter(|addr| !addr.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            session_addr
+                .map(str::trim)
+                .filter(|addr| !addr.is_empty())
+                .map(str::to_string)
+        })
+}
+
+/// D-Bus 流结束后必须重连拿 inhibit，不能退出守护。
+pub fn logind_should_reconnect(signal_stream_ended: bool) -> bool {
+    signal_stream_ended
+}
+
 /// 设置开着就关灯。不能用 UI 里“现在亮不亮”做快路径：
 /// 断开或进托盘之后快照经常是灭的，实体灯还亮着。
 pub fn should_turn_off(pref_enabled: bool) -> bool {
@@ -135,5 +154,27 @@ mod tests {
     fn pref_on_turns_off_even_if_ui_thinks_lamp_is_off() {
         assert!(should_turn_off(true));
         assert!(!should_turn_off(false));
+    }
+
+    #[test]
+    fn empty_snapshot_falls_back_to_session_addr() {
+        assert_eq!(
+            turn_off_addr(None, Some("BE:28:69:00:00:DF")).as_deref(),
+            Some("BE:28:69:00:00:DF")
+        );
+        assert_eq!(
+            turn_off_addr(Some(""), Some("BE:28:69:00:00:DF")).as_deref(),
+            Some("BE:28:69:00:00:DF")
+        );
+        assert_eq!(
+            turn_off_addr(Some("AA:BB"), Some("CC:DD")).as_deref(),
+            Some("AA:BB")
+        );
+        assert_eq!(turn_off_addr(None, None), None);
+    }
+
+    #[test]
+    fn logind_stream_end_must_reconnect() {
+        assert!(logind_should_reconnect(true));
     }
 }
