@@ -87,7 +87,7 @@ pub fn request() {
 fn run_turn_off(addr: &str) -> String {
     let work = async {
         match tokio::time::timeout(
-            Duration::from_secs(8),
+            Duration::from_secs(shutdown_once::TURN_OFF_TIMEOUT_SECS),
             hi_my_light::shutdown_turn_off(addr),
         )
         .await
@@ -294,9 +294,9 @@ async fn watch_logind_once() -> WatchEnd {
 
     let mut delay_fd = take_inhibit(&proxy).await;
     if delay_fd.is_some() {
-        log_line("已申请 shutdown block inhibit");
+        log_line("已申请 shutdown delay inhibit");
     } else {
-        log_line("block inhibit 未申请到（设置可能是关的，或 logind 拒绝）");
+        log_line("delay inhibit 未申请到（设置可能是关的，或 logind 拒绝）");
     }
 
     loop {
@@ -340,7 +340,7 @@ async fn watch_logind_once() -> WatchEnd {
                 if want && delay_fd.is_none() && !OFF_ONCE.already_started() {
                     delay_fd = take_inhibit(&proxy).await;
                     if delay_fd.is_some() {
-                        log_line("已重新申请 shutdown block inhibit");
+                        log_line("已重新申请 shutdown delay inhibit");
                     }
                 } else if !want {
                     delay_fd = None;
@@ -356,7 +356,12 @@ async fn take_inhibit(proxy: &Login1ManagerProxy<'_>) -> Option<zbus::zvariant::
         return None;
     }
     match proxy
-        .inhibit("shutdown", "hi-my-light", "系统关机时关灯", "block")
+        .inhibit(
+            "shutdown",
+            "hi-my-light",
+            "系统关机时关灯",
+            shutdown_once::LOGIND_INHIBIT_MODE,
+        )
         .await
     {
         Ok(fd) => Some(fd),

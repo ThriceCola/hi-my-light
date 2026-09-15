@@ -17,13 +17,13 @@ pub async fn shutdown_turn_off(addr: &str) -> Result<(), BleError> {
     let bd = BDAddr::from_str(addr).map_err(|_| BleError::PeripheralNotFound(addr.into()))?;
 
     let mut last = BleError::NoAdapter;
-    for attempt in 0..3 {
+    for attempt in 0..2 {
         match shutdown_turn_off_once(&bd, &uuid).await {
             Ok(()) => return Ok(()),
             Err(err) => last = err,
         }
-        if attempt + 1 < 3 {
-            tokio::time::sleep(Duration::from_millis(250)).await;
+        if attempt + 1 < 2 {
+            tokio::time::sleep(Duration::from_millis(150)).await;
         }
     }
     Err(last)
@@ -32,7 +32,7 @@ pub async fn shutdown_turn_off(addr: &str) -> Result<(), BleError> {
 async fn shutdown_turn_off_once(bd: &btleplug::api::BDAddr, uuid: &Uuid) -> Result<(), BleError> {
     let manager = BleManager::new().await?;
     if manager.connect(bd).await.is_err() {
-        manager.scan_once(Duration::from_secs(3)).await?;
+        manager.scan_once(Duration::from_secs(2)).await?;
         manager.connect(bd).await?;
     }
     manager.find_characteristic(uuid).await?;

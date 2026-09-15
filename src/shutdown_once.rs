@@ -56,6 +56,13 @@ pub fn turn_off_addr(snap_addr: Option<&str>, session_addr: Option<&str>) -> Opt
         })
 }
 
+/// logind 的 shutdown inhibit 只能用 delay。
+/// `block` 会让关机等我们放锁，而我们又在等 PrepareForShutdown，两边卡住，只能按机箱键。
+pub const LOGIND_INHIBIT_MODE: &str = "delay";
+
+/// delay inhibit 默认最多约 5 秒，关灯必须在这之前结束。
+pub const TURN_OFF_TIMEOUT_SECS: u64 = 4;
+
 /// D-Bus 流结束后必须重连拿 inhibit，不能退出守护。
 pub fn logind_should_reconnect(signal_stream_ended: bool) -> bool {
     signal_stream_ended
@@ -176,5 +183,11 @@ mod tests {
     #[test]
     fn logind_stream_end_must_reconnect() {
         assert!(logind_should_reconnect(true));
+    }
+
+    #[test]
+    fn shutdown_inhibit_must_be_delay_not_block() {
+        assert_eq!(LOGIND_INHIBIT_MODE, "delay");
+        assert!(TURN_OFF_TIMEOUT_SECS <= 4);
     }
 }
