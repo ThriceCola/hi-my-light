@@ -7,7 +7,7 @@ use hi_my_light::{Effect, Rgb};
 use crate::lamp::RearLook;
 use crate::theme::{INK, glow_from_kelvin, lerp_rgb, tone};
 
-const BAR_H: f32 = 7.0;
+const BAR_H: f32 = 8.0;
 
 const DUSTY_RED: Rgb = Rgb::new(0xFF, 0x8A, 0x78);
 const DUSTY_GREEN: Rgb = Rgb::new(0x6A, 0xE0, 0xA4);
@@ -38,18 +38,18 @@ struct Layout {
 pub fn paint(bounds: Bounds<Pixels>, preview: LampPreview, window: &mut Window) {
     window.paint_quad(fill(bounds, rgb(INK)));
 
-    let aspect = preview.aspect.clamp(1.2, 2.5);
+    let kelvin = glow_from_kelvin(preview.front_kelvin);
     let front = if preview.front_on {
         (preview.front_level / 100.0).clamp(0.0, 1.0)
     } else {
         0.0
     };
+    let aspect = preview.aspect.clamp(1.2, 2.5);
     let rear = if preview.rear_on {
         (preview.rear_level / 100.0).clamp(0.0, 1.0)
     } else {
         0.0
     };
-    let kelvin = glow_from_kelvin(preview.front_kelvin);
     let layout = layout(bounds, aspect);
 
     paint_wall_wash(bounds, &layout, preview, rear, window);
@@ -58,16 +58,16 @@ pub fn paint(bounds: Bounds<Pixels>, preview: LampPreview, window: &mut Window) 
 }
 
 fn layout(canvas: Bounds<Pixels>, aspect: f32) -> Layout {
-    let pad = px(16.);
+    let pad = px(20.);
     let bar_h = px(BAR_H);
-    let bezel = px(6.);
-    let gap = px(8.);
-    let wash = px(26.);
+    let bezel = px(9.);
+    let gap = px(6.);
+    let wash = px(8.);
 
     let max_w = (canvas.size.width - pad * 2.).max(px(96.));
     let top = pad + wash + bar_h + gap;
-    let visible = (canvas.size.height - top - px(12.)).max(px(48.));
-    let mut screen_h = visible / 0.5;
+    let visible = (canvas.size.height - top - px(8.)).max(px(40.));
+    let mut screen_h = visible / 0.42;
     let mut screen_w = screen_h * aspect;
     if screen_w > max_w {
         screen_w = max_w;
@@ -87,11 +87,11 @@ fn layout(canvas: Bounds<Pixels>, aspect: f32) -> Layout {
             screen.size.height + bezel * 2.,
         ),
     };
-    let bar_w = screen_w * 1.02;
+    let bar_w = screen_w * 0.82;
     let bar = Bounds {
         origin: point(
             canvas.center().x - bar_w / 2.,
-            screen_y - gap - bar_h,
+            frame.origin.y - gap - bar_h + px(4.),
         ),
         size: size(bar_w, bar_h),
     };
@@ -148,49 +148,80 @@ fn paint_wall_wash(
 }
 
 fn paint_monitor(layout: &Layout, kelvin: u32, front: f32, window: &mut Window) {
-    window.paint_quad(fill(layout.bezel, rgb(0x1A1814)).corner_radii(px(10.)));
-    window.paint_quad(fill(layout.screen, rgb(0x0E0D0B)).corner_radii(px(4.)));
+    window.paint_quad(fill(layout.bezel, rgb(0x0A0A0C)));
+    window.paint_quad(fill(layout.screen, rgb(0x08080A)));
+
+    let fade_h = layout.screen.size.height;
+    let layers = 10;
+    for i in 0..layers {
+        let t = i as f32 / layers as f32;
+        let band = Bounds {
+            origin: point(
+                layout.screen.origin.x,
+                layout.screen.origin.y + fade_h * t,
+            ),
+            size: size(layout.screen.size.width, fade_h / layers as f32 + px(1.)),
+        };
+        let hide = if t > 0.55 {
+            ((t - 0.55) / 0.45).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        window.paint_quad(fill(band, tone(INK, hide)));
+    }
 
     if front > 0.01 {
-        let layers = 7;
+        let wash_h = layout.screen.size.height * 0.42;
+        let layers = 12;
         for i in 0..layers {
-            let t = i as f32 / layers as f32;
-            let h = layout.screen.size.height * (0.16 + front * 0.10);
+            let t = i as f32 / (layers as f32 - 1.0);
             let band = Bounds {
                 origin: point(
                     layout.screen.origin.x,
-                    layout.screen.origin.y + h * t * 0.85,
+                    layout.screen.origin.y + wash_h * t * 0.92,
                 ),
-                size: size(layout.screen.size.width, h),
+                size: size(layout.screen.size.width, (wash_h / layers as f32) * 1.8),
             };
-            window.paint_quad(fill(
-                band,
-                tone(kelvin, front * (0.20 - t * 0.16).max(0.0)),
-            ));
+            let falloff = (1.0 - t).powf(2.4);
+            let alpha = front * (0.08 + front * 0.22) * falloff;
+            window.paint_quad(fill(band, tone(kelvin, alpha)));
         }
     }
 }
 
 fn paint_front_bar(bar: Bounds<Pixels>, kelvin: u32, front: f32, window: &mut Window) {
-    let r = bar.size.height / 2.;
     if front > 0.01 {
-        let bloom = 3.0 + front * 7.0;
+        let bloom = 4.0 + front * 10.0;
         let halo = Bounds {
-            origin: point(bar.origin.x - px(bloom), bar.origin.y - px(bloom * 0.45)),
+            origin: point(bar.origin.x - px(bloom), bar.origin.y - px(bloom * 0.15)),
             size: size(
                 bar.size.width + px(bloom * 2.0),
-                bar.size.height + px(bloom * 0.9),
+                bar.size.height + px(12.0 + front * 22.0),
             ),
         };
-        window.paint_quad(fill(halo, tone(kelvin, front * 0.22)).corner_radii(halo.size.height / 2.));
+        window.paint_quad(fill(halo, tone(kelvin, 0.10 + front * 0.16)));
     }
-    window.paint_quad(fill(bar, rgb(0x2A261F)).corner_radii(r));
-    let lit = if front > 0.01 {
-        lerp_rgb(0x3A3226, kelvin, 0.35 + front * 0.65)
-    } else {
-        0x2A261F
-    };
-    window.paint_quad(fill(bar, rgb(lit)).corner_radii(r));
+    let left = lerp_rgb(0x3A2A1A, kelvin, 0.35);
+    let right = lerp_rgb(0x2A3340, kelvin, 0.35);
+    let steps = 18;
+    for i in 0..steps {
+        let t = i as f32 / (steps - 1) as f32;
+        let mid = if t < 0.5 {
+            lerp_rgb(left, kelvin, t * 2.0)
+        } else {
+            lerp_rgb(kelvin, right, (t - 0.5) * 2.0)
+        };
+        let piece = Bounds {
+            origin: point(bar.origin.x + bar.size.width * (i as f32 / steps as f32), bar.origin.y),
+            size: size((bar.size.width / steps as f32).max(px(1.)), bar.size.height),
+        };
+        let lit = if front > 0.01 {
+            lerp_rgb(0x2A2A2E, mid, 0.35 + front * 0.65)
+        } else {
+            0x2A2A2E
+        };
+        window.paint_quad(fill(piece, rgb(lit)));
+    }
 }
 
 fn rear_rgb(look: RearLook, t: f32, phase: f32) -> Rgb {

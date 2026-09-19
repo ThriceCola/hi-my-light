@@ -1,17 +1,17 @@
 use std::time::Duration;
 
+use gpui::prelude::*;
 use gpui::{
     Animation, AnimationExt, Bounds, Context, CursorStyle, Decorations, HitboxBehavior,
     InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, ResizeEdge, Size,
     StatefulInteractiveElement, Styled, Window, WindowBackgroundAppearance, WindowBounds,
-    WindowControls, WindowDecorations, WindowOptions, canvas, div, point, prelude::*, px, rgb, size,
+    WindowControls, WindowDecorations, WindowOptions, canvas, div, point, px, rgb, size,
     transparent_black,
 };
 
-use crate::theme::{AMBER, INK, LINE, PAPER, STONE, home_window_size, paint_spinner_ring, tone};
+use crate::theme::{FRAME_SHADOW, HOVER, INK, LINE, PAPER, STONE, home_window_size, paint_spinner_ring, tone};
 
-const SHADOW: f32 = 10.0;
-const ROUND: f32 = 10.0;
+const ROUND: f32 = 2.0;
 
 pub fn window_options(cx: &gpui::App) -> WindowOptions {
     let bounds = gpui::Bounds::centered(None, home_window_size(cx), cx);
@@ -24,7 +24,7 @@ pub fn window_options(cx: &gpui::App) -> WindowOptions {
         }),
         window_background: WindowBackgroundAppearance::Opaque,
         window_decorations: Some(WindowDecorations::Client),
-        window_min_size: Some(size(px(560.), px(640.))),
+        window_min_size: Some(size(px(720.), px(620.))),
         app_id: Some("hi-my-light".into()),
         ..Default::default()
     }
@@ -37,7 +37,7 @@ pub fn frame(
 ) -> impl IntoElement {
     let decorations = window.window_decorations();
     let rounding = px(ROUND);
-    let shadow_size = px(SHADOW);
+    let shadow_size = px(FRAME_SHADOW);
     window.set_client_inset(match decorations {
         Decorations::Client { tiling } if !tiling.is_tiled() => shadow_size,
         _ => px(0.),
@@ -95,6 +95,7 @@ pub fn frame(
                 .bg(rgb(INK))
                 .text_color(rgb(PAPER))
                 .font_family(".SystemUIFont")
+                .font_weight(gpui::FontWeight::MEDIUM)
                 .overflow_hidden()
                 .map(|el| match decorations {
                     Decorations::Server => el,
@@ -137,12 +138,13 @@ pub fn titlebar<T: TitleDrag + 'static>(
         .window_control_area(gpui::WindowControlArea::Drag)
         .flex()
         .w_full()
-        .h(px(40.))
+        .h(px(36.))
         .px_3()
         .items_center()
         .justify_between()
         .border_b_1()
         .border_color(rgb(LINE))
+        .bg(rgb(INK))
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(|this, _, _, cx| {
@@ -222,14 +224,13 @@ fn win_btn(
         .id(id)
         .w(px(26.))
         .h(px(22.))
-        .rounded_md()
         .flex()
         .items_center()
         .justify_center()
         .text_xs()
         .text_color(rgb(STONE))
         .cursor_pointer()
-        .hover(|s| s.bg(rgb(0x221E18)).text_color(rgb(AMBER)))
+        .hover(|s| s.bg(rgb(HOVER)).text_color(rgb(PAPER)))
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
         .child(label)
@@ -238,8 +239,8 @@ fn win_btn(
 pub fn brand() -> impl IntoElement {
     div()
         .text_xs()
-        .font_weight(gpui::FontWeight::MEDIUM)
-        .text_color(rgb(AMBER))
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_color(rgb(STONE))
         .child("HML")
 }
 
@@ -254,32 +255,22 @@ pub fn connecting_overlay() -> impl IntoElement {
         .justify_center()
         .gap_3()
         .bg(tone(INK, 0.55))
-        .child(
-            div()
-                .id("connecting-spin")
-                .size(px(36.))
-                .with_animation(
-                    "connecting-spin",
-                    Animation::new(Duration::from_millis(900)).repeat(),
-                    |this, delta| {
-                        this.child(
-                            canvas(
-                                |_, _, _| {},
-                                move |bounds, _, window, _| {
-                                    paint_spinner_ring(bounds, delta, window);
-                                },
-                            )
-                            .size_full(),
-                        )
-                    },
-                ),
-        )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(AMBER))
-                .child("正在连接"),
-        )
+        .child(div().id("connecting-spin").size(px(36.)).with_animation(
+            "connecting-spin",
+            Animation::new(Duration::from_millis(900)).repeat(),
+            |this, delta| {
+                this.child(
+                    canvas(
+                        |_, _, _| {},
+                        move |bounds, _, window, _| {
+                            paint_spinner_ring(bounds, delta, window);
+                        },
+                    )
+                    .size_full(),
+                )
+            },
+        ))
+        .child(div().text_xs().text_color(rgb(PAPER)).child("CONNECTING"))
 }
 
 fn resize_edge(pos: Point<Pixels>, shadow_size: Pixels, size: Size<Pixels>) -> Option<ResizeEdge> {

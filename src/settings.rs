@@ -1,12 +1,12 @@
 use gpui::{
     Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Subscription, Window, div, rgb,
+    StatefulInteractiveElement, Styled, Subscription, Window, div, px, rgb,
 };
 
 use crate::desktop;
 use crate::service::LampService;
 use crate::session::ClosePreference;
-use crate::theme::{AMBER, LINE, PANEL, STONE, check_box, section_label};
+use crate::theme::{HOVER, INK, LINE, PAPER, STONE, check_box, ghost_btn, meta};
 
 pub struct SettingsView {
     service: Entity<LampService>,
@@ -33,24 +33,47 @@ impl Render for SettingsView {
 
         div()
             .flex()
-            .flex_col()
             .size_full()
-            .px_4()
-            .py_4()
-            .gap_4()
             .child(
                 div()
-                    .text_xs()
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(rgb(AMBER))
-                    .child("设置"),
-            )
-            .child(section_label("关闭窗口时"))
-            .child(
-                div()
+                    .w(px(168.))
+                    .h_full()
+                    .px_4()
+                    .py_7()
+                    .border_r_1()
+                    .border_color(rgb(LINE))
                     .flex()
                     .flex_col()
-                    .gap_2()
+                    .gap_3()
+                    .child(nav_item("DEVICE", true))
+                    .child(nav_item("CLOSE", false)),
+            )
+            .child(
+                div()
+                    .id("settings-page")
+                    .flex_1()
+                    .h_full()
+                    .min_w(px(0.))
+                    .px_10()
+                    .py_9()
+                    .overflow_y_scroll()
+                    .flex()
+                    .flex_col()
+                    .child(meta("MANUAL 01"))
+                    .child(
+                        div()
+                            .mt_1()
+                            .mb_6()
+                            .text_size(px(42.))
+                            .font_weight(FontWeight::BOLD)
+                            .line_height(px(44.))
+                            .text_color(rgb(PAPER))
+                            .child("Device"),
+                    )
+                    .child(section_row(
+                        "关闭窗口",
+                        preference_label(preference),
+                    ))
                     .child(pref_row(
                         "pref-ask",
                         "每次询问",
@@ -83,26 +106,18 @@ impl Render for SettingsView {
                                 cx.notify();
                             });
                         }),
-                    )),
-            )
-            .child(section_label("电源"))
-            .child(pref_row(
-                "pref-shutdown-off",
-                "系统关机时关灯",
-                off_on_shutdown,
-                cx.listener(|this, _, _, cx| {
-                    this.service.update(cx, |service, cx| {
-                        service.set_off_on_shutdown(!service.off_on_shutdown);
-                        cx.notify();
-                    });
-                }),
-            ))
-            .child(section_label("桌面"))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
+                    ))
+                    .child(pref_row(
+                        "pref-shutdown-off",
+                        "系统关机时关灯",
+                        off_on_shutdown,
+                        cx.listener(|this, _, _, cx| {
+                            this.service.update(cx, |service, cx| {
+                                service.set_off_on_shutdown(!service.off_on_shutdown);
+                                cx.notify();
+                            });
+                        }),
+                    ))
                     .child(pref_row(
                         "pref-autostart",
                         "开机自启动（仅托盘）",
@@ -138,9 +153,44 @@ impl Render for SettingsView {
                             }
                             cx.notify();
                         }),
-                    )),
+                    ))
             )
     }
+}
+
+fn preference_label(preference: ClosePreference) -> &'static str {
+    match preference {
+        ClosePreference::Ask => "Ask",
+        ClosePreference::Background => "Tray",
+        ClosePreference::Quit => "Quit",
+    }
+}
+
+fn nav_item(label: &'static str, current: bool) -> impl IntoElement {
+    div()
+        .text_xs()
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(if current { rgb(PAPER) } else { rgb(STONE) })
+        .child(label)
+}
+
+fn section_row(title: &'static str, value: &'static str) -> impl IntoElement {
+    div()
+        .flex()
+        .w_full()
+        .items_center()
+        .justify_between()
+        .py_3()
+        .border_t_1()
+        .border_color(rgb(LINE))
+        .child(div().text_sm().text_color(rgb(PAPER)).child(title))
+        .child(
+            div()
+                .text_xs()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(STONE))
+                .child(value),
+        )
 }
 
 fn install_row(
@@ -149,31 +199,19 @@ fn install_row(
 ) -> impl IntoElement {
     let title = desktop::install_title(installed);
     div()
-        .id("pref-install-menu")
         .flex()
-        .gap_3()
+        .w_full()
         .items_center()
-        .px_3()
-        .py_2()
-        .rounded_lg()
-        .border_1()
+        .justify_between()
+        .py_3()
+        .border_t_1()
         .border_color(rgb(LINE))
-        .bg(rgb(PANEL))
-        .cursor_pointer()
-        .hover(|s| s.bg(rgb(0x221E18)))
-        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .on_click(on_click)
         .child(
             div()
                 .flex()
                 .flex_col()
                 .gap_1()
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(rgb(0xE8E0D4))
-                        .child(title),
-                )
+                .child(div().text_sm().text_color(rgb(PAPER)).child(title))
                 .child(
                     div()
                         .text_xs()
@@ -181,6 +219,7 @@ fn install_row(
                         .child(desktop::install_hint(installed)),
                 ),
         )
+        .child(ghost_btn("pref-install-menu", "INSTALL", false, on_click))
 }
 
 fn pref_row(
@@ -192,23 +231,39 @@ fn pref_row(
     div()
         .id(id)
         .flex()
-        .gap_3()
+        .w_full()
         .items_center()
-        .px_3()
-        .py_2()
-        .rounded_lg()
-        .border_1()
-        .border_color(if active { rgb(AMBER) } else { rgb(LINE) })
-        .bg(if active { rgb(0x2A2216) } else { rgb(PANEL) })
+        .justify_between()
+        .py_3()
+        .border_t_1()
+        .border_color(rgb(LINE))
         .cursor_pointer()
-        .hover(|s| s.bg(rgb(0x221E18)))
+        .hover(|s| s.bg(rgb(HOVER)))
         .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
-        .child(check_box(active))
         .child(
             div()
-                .text_sm()
-                .text_color(if active { rgb(AMBER) } else { rgb(0xE8E0D4) })
-                .child(title),
+                .flex()
+                .gap_3()
+                .items_center()
+                .child(check_box(active))
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(if active { rgb(PAPER) } else { rgb(STONE) })
+                        .child(title),
+                ),
+        )
+        .child(
+            div()
+                .px_3()
+                .py_1()
+                .border_1()
+                .border_color(rgb(LINE))
+                .text_xs()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(if active { rgb(INK) } else { rgb(STONE) })
+                .bg(if active { rgb(PAPER) } else { rgb(0x000000) })
+                .child(if active { "ON" } else { "OFF" }),
         )
 }

@@ -6,7 +6,7 @@ use gpui::{
 
 use crate::bridge::DeviceRow;
 use crate::service::LampService;
-use crate::theme::{AMBER, LINE, STONE, chip_btn, status_pill};
+use crate::theme::{HOVER, INK, LINE, PAPER, STONE, chip_btn, status_pill};
 
 const ROW_H: f32 = 76.0;
 
@@ -120,24 +120,38 @@ impl DevicesView {
             .flex()
             .flex_col()
             .w_full()
-            .px_4()
-            .pt_4()
-            .pb_3()
-            .gap_3()
+            .px_10()
+            .pt_9()
+            .pb_4()
+            .gap_4()
             .border_b_1()
             .border_color(rgb(LINE))
             .child(
                 div()
                     .flex()
                     .w_full()
-                    .items_center()
+                    .items_end()
                     .justify_between()
                     .child(
                         div()
-                            .text_xs()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(rgb(AMBER))
-                            .child("设备"),
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(rgb(STONE))
+                                    .child("MANUAL 01"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(42.))
+                                    .font_weight(FontWeight::BOLD)
+                                    .line_height(px(44.))
+                                    .text_color(rgb(PAPER))
+                                    .child("Device"),
+                            ),
                     )
                     .child(status_pill(connected, scanning)),
             )
@@ -147,7 +161,7 @@ impl DevicesView {
                     .gap_2()
                     .child(chip_btn(
                         "scan",
-                        if scanning { "扫描…" } else { "扫描" },
+                        if scanning { "SCAN…" } else { "SCAN" },
                         !ready || scanning,
                         cx.listener(|this, _, _, cx| {
                             this.service.update(cx, |service, cx| {
@@ -159,7 +173,7 @@ impl DevicesView {
                     .when(connected, |row| {
                         row.child(chip_btn(
                             "disc",
-                            "断开",
+                            "DISCONNECT",
                             false,
                             cx.listener(|this, _, _, cx| {
                                 this.service.update(cx, |service, cx| {
@@ -198,35 +212,23 @@ fn device_row(
                 .flex()
                 .size_full()
                 .px_3()
-                .rounded_lg()
                 .justify_between()
                 .items_center()
                 .cursor_pointer()
-                .border_1()
-                .border_color(if preferred {
-                    rgb(AMBER)
-                } else if selected {
-                    rgb(0x5A4A30)
+                .border_t_1()
+                .border_color(rgb(LINE))
+                .bg(if preferred || selected {
+                    rgb(PAPER)
                 } else {
-                    rgb(LINE)
+                    rgb(0x000000)
                 })
-                .bg(if preferred {
-                    rgb(0x2A2216)
-                } else if selected {
-                    rgb(0x1C1914)
-                } else {
-                    rgb(0x181612)
+                .hover(|s| {
+                    if preferred || selected {
+                        s
+                    } else {
+                        s.bg(rgb(HOVER))
+                    }
                 })
-                .when(preferred, |row| {
-                    row.shadow(vec![gpui::BoxShadow {
-                        color: gpui::hsla(0.11, 0.48, 0.42, 0.55),
-                        offset: gpui::point(px(0.), px(6.)),
-                        blur_radius: px(22.),
-                        spread_radius: px(2.),
-                        inset: false,
-                    }])
-                })
-                .hover(|s| s.bg(rgb(0x221E18)))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     let addr = addr.clone();
                     this.service.update(cx, |service, cx| {
@@ -245,16 +247,16 @@ fn device_row(
                                 .flex()
                                 .gap_2()
                                 .items_center()
-                                .child(div().text_sm().child(device.name.clone()))
+                                .child(div().text_sm().text_color(if preferred || selected { rgb(INK) } else { rgb(PAPER) }).child(device.name.clone()))
                                 .when(preferred, |row| {
                                     row.child(
                                         div()
                                             .px_1()
-                                            .rounded_sm()
-                                            .bg(rgb(AMBER))
-                                            .text_color(rgb(0x1A140C))
+                                            .bg(rgb(INK))
+                                            .text_color(rgb(PAPER))
                                             .text_xs()
-                                            .child("首选"),
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .child("PRIMARY"),
                                     )
                                 }),
                         )
@@ -269,12 +271,12 @@ fn device_row(
                     div()
                         .text_xs()
                         .text_color(if selected || preferred {
-                            rgb(AMBER)
+                            rgb(INK)
                         } else {
                             rgb(STONE)
                         })
                         .child(if selected {
-                            "已连接".to_string()
+                            "CONNECTED".to_string()
                         } else {
                             rssi
                         }),

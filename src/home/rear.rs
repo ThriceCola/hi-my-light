@@ -7,10 +7,10 @@ use gpui::{
 use hi_my_light::{Effect, EffectGroup, Rgb};
 
 use crate::lamp::RearLook;
-use crate::theme::{AMBER, AMBER_SOFT, INK, LINE, PANEL, PAPER, STONE, tone};
+use crate::theme::{HOVER, INK, LINE, PANEL, PAPER, STONE, tone};
 
 use super::drag::{Track, TrackDrag};
-use super::front::{card, power_row};
+use super::widgets::{card, power_row};
 use super::slider::{self, Fill};
 use super::HomeView;
 
@@ -36,8 +36,9 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
-        .w_full()
-        .gap_3()
+        .size_full()
+        .min_h(px(0.))
+        .gap_4()
         .child(card().child(
             div()
                 .flex()
@@ -56,7 +57,7 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
                     level / 100.0,
                     Fill::Solid(match look {
                         RearLook::Solid(c) => c.packed(),
-                        RearLook::Play(_) => AMBER,
+                        RearLook::Play(_) => PAPER,
                     }),
                     cx,
                 )),
@@ -75,7 +76,7 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
                 format!("{:.0}%", speed),
                 Track::RearSpeed,
                 speed / 100.0,
-                Fill::Solid(AMBER_SOFT),
+                Fill::Solid(PAPER),
                 cx,
             )))
         })
@@ -92,22 +93,21 @@ fn color_trigger(
 ) -> impl IntoElement {
     let swatch = match look {
         RearLook::Solid(color) => color.packed(),
-        RearLook::Play(_) => AMBER,
+        RearLook::Play(_) => PAPER,
     };
     div()
         .id("hsv-open")
         .w_full()
         .h(px(44.))
         .px_2()
-        .rounded_lg()
         .border_1()
         .border_color(rgb(LINE))
-        .bg(rgb(0x181510))
+        .bg(rgb(INK))
         .cursor_pointer()
         .flex()
         .items_center()
         .gap_3()
-        .hover(|s| s.bg(rgb(0x221E18)))
+        .hover(|s| s.bg(rgb(HOVER)))
         .on_click(cx.listener(|this, _, _, cx| {
             this.hsv_open = true;
             cx.notify();
@@ -115,9 +115,8 @@ fn color_trigger(
         .child(
             div()
                 .size(px(28.))
-                .rounded_md()
                 .border_1()
-                .border_color(rgb(0xF3EDE4))
+                .border_color(rgb(PAPER))
                 .bg(rgb(swatch)),
         )
         .child(
@@ -142,8 +141,9 @@ fn color_trigger(
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(AMBER))
-                .child("色板"),
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(rgb(STONE))
+                .child("SWATCH"),
         )
 }
 
@@ -178,9 +178,8 @@ pub fn hsv_popover(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElem
             div()
                 .id("hsv-window")
                 .w(px(360.))
-                .px_4()
-                .py_4()
-                .rounded_xl()
+                .px_5()
+                .py_5()
                 .border_1()
                 .border_color(rgb(LINE))
                 .bg(rgb(PANEL))
@@ -204,21 +203,24 @@ pub fn hsv_popover(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElem
                         .justify_between()
                         .child(
                             div()
-                                .text_sm()
-                                .text_color(rgb(AMBER))
-                                .child("色板"),
+                                .text_xs()
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .text_color(rgb(STONE))
+                                .child("SWATCH"),
                         )
                         .child(
                             div()
                                 .id("hsv-done")
                                 .px_2()
                                 .py_1()
-                                .rounded_md()
                                 .cursor_pointer()
                                 .text_xs()
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .border_1()
+                                .border_color(rgb(LINE))
                                 .text_color(rgb(STONE))
-                                .hover(|s| s.bg(rgb(0x221E18)).text_color(rgb(PAPER)))
-                                .child("完成")
+                                .hover(|s| s.bg(rgb(HOVER)).text_color(rgb(PAPER)))
+                                .child("CLOSE · ESC")
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.hsv_open = false;
                                     this.end_drag(cx);
@@ -256,7 +258,6 @@ fn hsv_board(hue: f32, sat: f32, val: f32, cx: &mut Context<HomeView>) -> impl I
         .id("hsv-board")
         .w_full()
         .h(px(140.))
-        .rounded_lg()
         .overflow_hidden()
         .cursor_pointer()
         .border_1()
@@ -335,14 +336,15 @@ fn paint_sv(bounds: Bounds<Pixels>, hue: f32, sat: f32, val: f32, window: &mut W
         origin: gpui::point(x - px(8.), y - px(8.)),
         size: gpui::size(px(16.), px(16.)),
     };
-    window.paint_quad(fill(outer, rgb(0xF3EDE4)).corner_radii(px(8.)));
+    window.paint_quad(fill(outer, rgb(PAPER)));
     let inner = Bounds {
         origin: gpui::point(outer.origin.x + px(3.), outer.origin.y + px(3.)),
         size: gpui::size(px(10.), px(10.)),
     };
-    window.paint_quad(
-        fill(inner, rgb(Rgb::from_hsv(hue, sat, val).packed())).corner_radii(px(5.)),
-    );
+    window.paint_quad(fill(
+        inner,
+        rgb(Rgb::from_hsv(hue, sat, val).packed()),
+    ));
 }
 
 fn presets(look: RearLook, cx: &mut Context<HomeView>) -> impl IntoElement {
@@ -360,14 +362,13 @@ fn presets(look: RearLook, cx: &mut Context<HomeView>) -> impl IntoElement {
             div()
                 .id(name)
                 .size(px(28.))
-                .rounded_full()
                 .cursor_pointer()
-                .border_2()
-                .border_color(if active { rgb(0xF3EDE4) } else { rgb(LINE) })
+                .border_1()
+                .border_color(if active { rgb(PAPER) } else { rgb(LINE) })
                 .bg(rgb(color.packed()))
                 .shadow(if active {
                     vec![gpui::BoxShadow {
-                        color: gpui::hsla(0.08, 0.4, 0.5, 0.45),
+                        color: gpui::hsla(0., 0., 1., 0.18),
                         offset: gpui::point(px(0.), px(0.)),
                         blur_radius: px(8.),
                         spread_radius: px(0.),
@@ -397,6 +398,8 @@ fn effects(this: &HomeView, look: RearLook, cx: &mut Context<HomeView>) -> impl 
     };
     let group = this.effect_group;
     div()
+        .flex_1()
+        .min_h(px(0.))
         .flex()
         .flex_col()
         .gap_2()
@@ -404,26 +407,25 @@ fn effects(this: &HomeView, look: RearLook, cx: &mut Context<HomeView>) -> impl 
             div()
                 .flex()
                 .w_full()
-                .p_0p5()
-                .rounded_lg()
-                .bg(rgb(0x181510))
                 .border_1()
                 .border_color(rgb(LINE))
-                .children(EffectGroup::ALL.into_iter().map(|g| {
+                .children(EffectGroup::ALL.into_iter().enumerate().map(|(i, g)| {
                     let active = group == g;
+                    let last = i + 1 == EffectGroup::ALL.len();
                     div()
                         .id(g.name())
                         .flex_1()
-                        .h(px(30.))
+                        .h(px(32.))
                         .px_1()
-                        .rounded_md()
                         .cursor_pointer()
                         .flex()
                         .justify_center()
                         .items_center()
-                        .when(active, |d| d.bg(rgb(0x2A2216)))
+                        .when(!last, |d| d.border_r_1().border_color(rgb(LINE)))
+                        .when(active, |d| d.bg(rgb(PAPER)))
                         .text_xs()
-                        .text_color(if active { rgb(AMBER) } else { rgb(STONE) })
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(if active { rgb(INK) } else { rgb(STONE) })
                         .child(g.name())
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.effect_group = g;
@@ -433,9 +435,12 @@ fn effects(this: &HomeView, look: RearLook, cx: &mut Context<HomeView>) -> impl 
         )
         .child(
             div()
+                .id("fx-list")
+                .flex_1()
+                .min_h(px(0.))
+                .overflow_y_scroll()
                 .flex()
                 .flex_col()
-                .gap_1()
                 .children(
                     Effect::ALL
                         .into_iter()
@@ -445,19 +450,26 @@ fn effects(this: &HomeView, look: RearLook, cx: &mut Context<HomeView>) -> impl 
                             div()
                                 .id(gpui::SharedString::from(format!("fx-{:02x}", effect.byte())))
                                 .w_full()
-                                .h(px(36.))
-                                .px_3()
-                                .rounded_md()
+                                .h(px(40.))
+                                .px_0()
                                 .cursor_pointer()
                                 .flex()
                                 .items_center()
-                                .border_1()
-                                .border_color(if active { rgb(AMBER) } else { rgb(LINE) })
-                                .bg(if active { rgb(0x241C12) } else { rgb(PANEL) })
-                                .hover(|s| s.bg(rgb(0x221E18)))
+                                .border_t_1()
+                                .border_color(rgb(LINE))
+                                .when(active, |d| d.bg(rgb(PAPER)))
+                                .hover(|s| {
+                                    if active {
+                                        s
+                                    } else {
+                                        s.bg(rgb(HOVER))
+                                    }
+                                })
                                 .text_sm()
-                                .text_color(if active { rgb(AMBER_SOFT) } else { rgb(0xD8D0C4) })
-                                .child(effect.name())
+                                .text_color(if active { rgb(INK) } else { rgb(PAPER) })
+                                .child(
+                                    div().px_3().child(effect.name()),
+                                )
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.effect_group = effect.group();
                                     this.service.update(cx, |service, cx| {

@@ -9,7 +9,7 @@ use crate::home::HomeView;
 use crate::service::LampService;
 use crate::session::ClosePreference;
 use crate::settings::SettingsView;
-use crate::theme::{AMBER, INK, LINE, PANEL, STONE, check_box, chip_btn, status_pill, tone};
+use crate::theme::{HOVER, INK, LINE, PANEL, PAPER, STONE, check_box, chip_btn, status_pill, tone};
 use crate::workspace::{self, Page};
 
 pub struct ShellView {
@@ -161,19 +161,19 @@ impl Render for ShellView {
                         .child(status_pill(connected, scanning))
                         .child(nav_chip(
                             "nav-home",
-                            "主页",
+                            "HOME",
                             page == Page::Home,
                             cx.listener(|this, _, _, cx| this.show_page(Page::Home, cx)),
                         ))
                         .child(nav_chip(
                             "nav-devices",
-                            "设备",
+                            "DEVICE",
                             page == Page::Devices,
                             cx.listener(|this, _, _, cx| this.show_page(Page::Devices, cx)),
                         ))
                         .child(nav_chip(
                             "nav-settings",
-                            "设置",
+                            "MANUAL",
                             page == Page::Settings,
                             cx.listener(|this, _, _, cx| this.show_page(Page::Settings, cx)),
                         )),
@@ -226,19 +226,27 @@ fn close_dialog(
         .child(
             div()
                 .w(px(360.))
-                .px_4()
-                .py_4()
-                .rounded_lg()
+                .px_5()
+                .py_5()
                 .border_1()
                 .border_color(rgb(LINE))
                 .bg(rgb(PANEL))
                 .flex()
                 .flex_col()
-                .gap_3()
+                .gap_4()
                 .child(
                     div()
-                        .text_sm()
-                        .text_color(rgb(AMBER))
+                        .text_xs()
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(rgb(STONE))
+                        .child("CLOSE"),
+                )
+                .child(
+                    div()
+                        .text_size(px(28.))
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .line_height(px(32.))
+                        .text_color(rgb(PAPER))
                         .child("关闭窗口"),
                 )
                 .child(
@@ -277,19 +285,25 @@ fn nav_chip(
 ) -> impl IntoElement {
     div()
         .id(id)
-        .px_3()
-        .py_1p5()
-        .rounded_md()
+        .px_2()
+        .py_1()
         .flex()
         .items_center()
         .justify_center()
         .text_xs()
+        .font_weight(gpui::FontWeight::SEMIBOLD)
         .border_1()
-        .border_color(if active { rgb(AMBER) } else { rgb(LINE) })
-        .bg(if active { rgb(0x2A2216) } else { rgb(PANEL) })
-        .text_color(if active { rgb(AMBER) } else { rgb(STONE) })
+        .border_color(rgb(LINE))
+        .bg(if active { rgb(PAPER) } else { rgb(PANEL) })
+        .text_color(if active { rgb(INK) } else { rgb(STONE) })
         .cursor_pointer()
-        .hover(|s| s.bg(rgb(0x221E18)))
+        .hover(|s| {
+            if active {
+                s
+            } else {
+                s.bg(rgb(HOVER)).text_color(rgb(PAPER))
+            }
+        })
         .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
         .child(label)

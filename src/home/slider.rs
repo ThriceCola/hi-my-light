@@ -4,7 +4,7 @@ use gpui::{
     prelude::*, px, rgb,
 };
 
-use crate::theme::{AMBER, LINE, STONE};
+use crate::theme::{PAPER, STONE, TRACK, lerp_rgb};
 
 use super::drag::{Track, TrackDrag};
 use super::HomeView;
@@ -62,7 +62,7 @@ pub fn row(
         .flex()
         .flex_col()
         .w_full()
-        .gap_1p5()
+        .gap_2()
         .child(
             div()
                 .flex()
@@ -71,17 +71,16 @@ pub fn row(
                 .justify_between()
                 .child(
                     div()
-                        .px_0p5()
                         .text_xs()
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
                         .text_color(rgb(STONE))
                         .child(title),
                 )
                 .child(
                     div()
-                        .px_0p5()
-                        .text_xs()
-                        .font_family("monospace")
-                        .text_color(rgb(AMBER))
+                        .text_sm()
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(rgb(PAPER))
                         .child(value),
                 ),
         )
@@ -95,10 +94,14 @@ pub fn track_bar(
     cx: &mut Context<HomeView>,
 ) -> impl IntoElement {
     let t = t.clamp(0.0, 1.0);
+    let h = match fill {
+        Fill::Cct | Fill::Hue => px(28.),
+        Fill::Solid(_) => px(18.),
+    };
     div()
         .id(track_id(track))
         .w_full()
-        .h(px(28.))
+        .h(h)
         .cursor_pointer()
         .on_mouse_down(
             MouseButton::Left,
@@ -139,60 +142,83 @@ pub fn track_bar(
 }
 
 fn paint_bar(bounds: Bounds<Pixels>, t: f32, fill_kind: Fill, window: &mut Window) {
-    let track_h = px(6.);
-    let track = Bounds {
-        origin: point_y_center(bounds, track_h),
-        size: gpui::size(bounds.size.width, track_h),
-    };
-    window.paint_quad(fill(track, rgb(LINE)).corner_radii(px(3.)));
-
     match fill_kind {
-        Fill::Solid(color) => {
-            let lit = Bounds {
-                origin: track.origin,
-                size: gpui::size(track.size.width * t, track_h),
-            };
-            window.paint_quad(fill(lit, rgb(color)).corner_radii(px(3.)));
-        }
-        Fill::Cct => paint_gradient(track, 0xE39B4A, 0xC9D7EE, window),
-        Fill::Hue => paint_hue(track, window),
+        Fill::Cct => paint_tube(bounds, t, window),
+        Fill::Hue => paint_hue_tube(bounds, t, window),
+        Fill::Solid(color) => paint_thin(bounds, t, color, window),
     }
+}
 
-    let thumb_x = bounds.origin.x + bounds.size.width * t - px(8.);
-    let thumb = Bounds {
-        origin: gpui::point(thumb_x, bounds.center().y - px(8.)),
-        size: gpui::size(px(16.), px(16.)),
+fn paint_tube(bounds: Bounds<Pixels>, t: f32, window: &mut Window) {
+    let h = px(10.);
+    let track = Bounds {
+        origin: gpui::point(bounds.origin.x, bounds.center().y - h / 2.),
+        size: gpui::size(bounds.size.width, h),
     };
-    window.paint_quad(fill(thumb, rgb(0xF3EDE4)).corner_radii(px(8.)));
-    window.paint_quad(
-        fill(
-            Bounds {
-                origin: gpui::point(thumb.origin.x + px(3.), thumb.origin.y + px(3.)),
-                size: gpui::size(px(10.), px(10.)),
-            },
-            rgb(thumb_core(fill_kind, t)),
-        )
-        .corner_radii(px(5.)),
-    );
+    window.paint_quad(fill(track, rgb(0x111111)));
+    paint_cct_spectrum(track, window);
+    paint_needle(bounds, t, window);
 }
 
-fn thumb_core(fill: Fill, t: f32) -> u32 {
-    match fill {
-        Fill::Solid(color) => color,
-        Fill::Cct => crate::theme::lerp_rgb(0xE39B4A, 0xC9D7EE, t),
-        Fill::Hue => hi_my_light::Rgb::from_hue(t * 360.0).packed(),
-    }
+fn paint_hue_tube(bounds: Bounds<Pixels>, t: f32, window: &mut Window) {
+    let h = px(10.);
+    let track = Bounds {
+        origin: gpui::point(bounds.origin.x, bounds.center().y - h / 2.),
+        size: gpui::size(bounds.size.width, h),
+    };
+    paint_hue(track, window);
+    paint_needle(bounds, t, window);
 }
 
-fn paint_gradient(track: Bounds<Pixels>, a: u32, b: u32, window: &mut Window) {
-    let steps = 24;
+fn paint_thin(bounds: Bounds<Pixels>, t: f32, _color: u32, window: &mut Window) {
+    let h = px(2.);
+    let track = Bounds {
+        origin: gpui::point(bounds.origin.x, bounds.center().y - h / 2.),
+        size: gpui::size(bounds.size.width, h),
+    };
+    window.paint_quad(fill(track, rgb(TRACK)));
+    let lit = Bounds {
+        origin: track.origin,
+        size: gpui::size(track.size.width * t, h),
+    };
+    window.paint_quad(fill(lit, rgb(PAPER)));
+}
+
+fn paint_needle(bounds: Bounds<Pixels>, t: f32, window: &mut Window) {
+    let x = bounds.origin.x + bounds.size.width * t;
+    let shadow = Bounds {
+        origin: gpui::point(x - px(2.), bounds.center().y - px(11.)),
+        size: gpui::size(px(4.), px(22.)),
+    };
+    window.paint_quad(fill(shadow, rgb(0x000000)));
+    let needle = Bounds {
+        origin: gpui::point(x - px(1.), bounds.center().y - px(10.)),
+        size: gpui::size(px(2.), px(20.)),
+    };
+    window.paint_quad(fill(needle, rgb(PAPER)));
+}
+
+fn paint_cct_spectrum(track: Bounds<Pixels>, window: &mut Window) {
+    const STOPS: [u32; 5] = [0xC47A32, 0xE8C48A, 0xF2EFE8, 0xC8D4E8, 0x7A90B8];
+    let steps = 48;
     for i in 0..steps {
-        let t = i as f32 / steps as f32;
+        let u = i as f32 / (steps - 1) as f32;
+        let scaled = u * (STOPS.len() - 1) as f32;
+        let i0 = scaled.floor() as usize;
+        let i1 = (i0 + 1).min(STOPS.len() - 1);
+        let f = scaled - i0 as f32;
+        let color = lerp_rgb(STOPS[i0], STOPS[i1], f);
         let piece = Bounds {
-            origin: gpui::point(track.origin.x + track.size.width * t, track.origin.y),
-            size: gpui::size((track.size.width / steps as f32).max(px(1.)), track.size.height),
+            origin: gpui::point(
+                track.origin.x + track.size.width * (i as f32 / steps as f32),
+                track.origin.y,
+            ),
+            size: gpui::size(
+                (track.size.width / steps as f32).max(px(1.)),
+                track.size.height,
+            ),
         };
-        window.paint_quad(fill(piece, rgb(crate::theme::lerp_rgb(a, b, t))).corner_radii(px(2.)));
+        window.paint_quad(fill(piece, rgb(color)));
     }
 }
 
@@ -202,14 +228,16 @@ fn paint_hue(track: Bounds<Pixels>, window: &mut Window) {
         let t = i as f32 / steps as f32;
         let piece = Bounds {
             origin: gpui::point(track.origin.x + track.size.width * t, track.origin.y),
-            size: gpui::size((track.size.width / steps as f32).max(px(1.)), track.size.height),
+            size: gpui::size(
+                (track.size.width / steps as f32).max(px(1.)),
+                track.size.height,
+            ),
         };
-        window.paint_quad(fill(piece, rgb(hi_my_light::Rgb::from_hue(t * 360.0).packed())).corner_radii(px(2.)));
+        window.paint_quad(fill(
+            piece,
+            rgb(hi_my_light::Rgb::from_hue(t * 360.0).packed()),
+        ));
     }
-}
-
-fn point_y_center(bounds: Bounds<Pixels>, h: Pixels) -> gpui::Point<Pixels> {
-    gpui::point(bounds.origin.x, bounds.center().y - h / 2.)
 }
 
 fn apply_track(this: &mut HomeView, track: Track, t: f32, cx: &mut Context<HomeView>) {
