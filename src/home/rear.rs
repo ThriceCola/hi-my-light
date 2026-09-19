@@ -1,14 +1,15 @@
 use gpui::prelude::*;
 use gpui::{
     Bounds, Context, DragMoveEvent, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, StatefulInteractiveElement, Styled, Window, canvas, div, fill, px, rgb,
+    ParentElement, Pixels, StatefulInteractiveElement, Styled, Window, canvas, div, fill, px,
+    relative, rgb,
 };
 
 use hi_my_light::{Effect, EffectGroup, Rgb};
 
 use crate::lamp::RearLook;
 use crate::theme::{
-    HOVER, INK, LINE, MIST, PANEL, PAPER, STONE, power_switch, step_btn, tone,
+    HOVER, INK, LINE, MIST, PANEL, PAPER, STONE, TRACK, power_switch, step_btn, tone,
 };
 
 use super::drag::{Track, TrackDrag};
@@ -16,7 +17,7 @@ use super::slider::{self, Fill};
 use super::{HomeView, RearPane, tabs};
 
 pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
-    let (on, level, speed, look, solid, effect, loud, audio_caption, sensitivity) = {
+    let (on, level, speed, look, solid, effect, rms, loud, audio_caption, sensitivity) = {
         let snap = this.service.read(cx);
         (
             snap.rear.on,
@@ -25,6 +26,7 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
             snap.rear.look,
             snap.rear.solid,
             snap.rear.effect,
+            snap.audio_rms,
             snap.audio_loud,
             snap.audio_caption(),
             snap.audio_sensitivity.percent(),
@@ -69,6 +71,7 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
             level,
             speed,
             sensitivity,
+            rms,
             glow,
             right,
             motion,
@@ -236,6 +239,7 @@ fn readout(
     level: f32,
     speed: f32,
     sensitivity: f32,
+    rms: f32,
     glow: u32,
     right: String,
     motion: bool,
@@ -251,35 +255,51 @@ fn readout(
         .py_4()
         .opacity(if on { 1.0 } else { 0.32 });
     if audio {
-        row.child(
-            div()
-                .flex()
-                .flex_col()
-                .items_start()
-                .child(
-                    div()
-                        .text_xs()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .text_color(rgb(STONE))
-                        .child("音频"),
-                )
-                .child(
-                    div()
-                        .mt_1()
-                        .text_size(px(72.))
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .line_height(px(64.))
-                        .text_color(rgb(glow))
-                        .child(right),
-                ),
-        )
-        .child(metric(
-            "灵敏",
-            format!("{:.0}", sensitivity),
-            PAPER,
-            false,
-            true,
-        ))
+        div()
+            .flex_none()
+            .flex()
+            .flex_col()
+            .w_full()
+            .opacity(if on { 1.0 } else { 0.32 })
+            .gap_3()
+            .child(
+                div()
+                    .flex()
+                    .w_full()
+                    .items_end()
+                    .justify_between()
+                    .pt_4()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .items_start()
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(rgb(STONE))
+                                    .child("音频"),
+                            )
+                            .child(
+                                div()
+                                    .mt_1()
+                                    .text_size(px(72.))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .line_height(px(64.))
+                                    .text_color(rgb(glow))
+                                    .child(right),
+                            ),
+                    )
+                    .child(metric(
+                        "灵敏",
+                        format!("{:.0}", sensitivity),
+                        PAPER,
+                        false,
+                        true,
+                    )),
+            )
+            .child(audio_meter(rms, glow))
     } else {
         row.child(metric("亮度", format!("{:.0}", level), glow, true, false))
             .child(
@@ -550,6 +570,21 @@ fn paint_sv(bounds: Bounds<Pixels>, hue: f32, sat: f32, val: f32, window: &mut W
         size: gpui::size(px(10.), px(10.)),
     };
     window.paint_quad(fill(inner, rgb(Rgb::from_hsv(hue, sat, val).packed())));
+}
+
+fn audio_meter(rms: f32, fill_color: u32) -> impl IntoElement {
+    let fill = ((rms / 0.25).clamp(0.0, 1.0) * 100.0).round() as f32 / 100.0;
+    div()
+        .flex_none()
+        .w_full()
+        .pb_6()
+        .child(
+            div()
+                .w_full()
+                .h(px(8.))
+                .bg(rgb(TRACK))
+                .child(div().h_full().w(relative(fill)).bg(rgb(fill_color))),
+        )
 }
 
 fn presets(look: RearLook, cx: &mut Context<HomeView>) -> impl IntoElement {
