@@ -44,6 +44,8 @@ pub struct LampService {
     pub audio_rms: f32,
     pub audio_loud: bool,
     pub audio_sensitivity: Level,
+    pub audio_dynamic: bool,
+    dynamic_sense: audio::DynamicSense,
     quiet_since: Option<Instant>,
     audio_retry_at: Option<Instant>,
     last_scroll: Instant,
@@ -139,6 +141,8 @@ impl LampService {
             audio_rms: 0.0,
             audio_loud: false,
             audio_sensitivity: Level::from_byte(session.rear.audio_sensitivity),
+            audio_dynamic: session.rear.audio_dynamic,
+            dynamic_sense: audio::DynamicSense::default(),
             quiet_since: None,
             audio_retry_at: None,
             last_scroll: Instant::now() - audio::TICK,
@@ -319,6 +323,7 @@ impl LampService {
             rear: {
                 let mut rear = RearSnap::from_lamp(&self.rear);
                 rear.audio_sensitivity = self.audio_sensitivity.byte();
+                rear.audio_dynamic = self.audio_dynamic;
                 rear
             },
         }
@@ -414,6 +419,14 @@ impl LampService {
         if was_loud && !self.audio_loud && self.connected() {
             self.write(Rgb::BLACK.scroll_frame());
         }
+    }
+
+    pub fn toggle_audio_dynamic(&mut self) {
+        self.audio_dynamic = !self.audio_dynamic;
+        if !self.audio_dynamic {
+            self.dynamic_sense.clear();
+        }
+        self.persist();
     }
 
     fn gate_audio(&mut self) {
@@ -527,6 +540,7 @@ impl LampService {
         self.quiet_since = None;
         self.audio_rms = 0.0;
         self.audio_retry_at = None;
+        self.dynamic_sense.clear();
     }
 
     fn want_capture(&self) -> bool {
@@ -589,6 +603,17 @@ impl LampService {
             Ok(Some(sample)) => {
                 self.audio_rms = sample.rms;
                 self.gate_audio();
+                if self.audio_dynamic {
+                    let now = Instant::now();
+                    self.dynamic_sense.push(now, sample.rms);
+                    if let Some(next) = self
+                        .dynamic_sense
+                        .suggest(now, self.audio_sensitivity.percent())
+                    {
+                        self.set_audio_sensitivity(next);
+                        self.persist();
+                    }
+                }
             }
             Ok(None) => {}
             Err(err) => {

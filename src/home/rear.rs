@@ -17,7 +17,7 @@ use super::slider::{self, Fill};
 use super::{HomeView, RearPane, tabs};
 
 pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
-    let (on, level, speed, look, solid, effect, rms, loud, audio_caption, sensitivity) = {
+    let (on, level, speed, look, solid, effect, rms, loud, audio_caption, sensitivity, dynamic) = {
         let snap = this.service.read(cx);
         (
             snap.rear.on,
@@ -30,6 +30,7 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
             snap.audio_loud,
             snap.audio_caption(),
             snap.audio_sensitivity.percent(),
+            snap.audio_dynamic,
         )
     };
     let motion = this.rear_pane == RearPane::Motion;
@@ -155,6 +156,7 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
                 }),
                 cx,
             ))
+            .child(dynamic_sense_btn(dynamic, cx))
         })
         .child(
             div()
@@ -174,6 +176,32 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
                     }),
                 )),
         )
+}
+
+fn dynamic_sense_btn(on: bool, cx: &mut Context<HomeView>) -> impl IntoElement {
+    div()
+        .id("rear-dynamic-sense")
+        .flex_none()
+        .h(px(40.))
+        .w_full()
+        .cursor_pointer()
+        .flex()
+        .justify_center()
+        .items_center()
+        .border_t_1()
+        .border_color(rgb(LINE))
+        .when(on, |d| d.bg(rgb(PAPER)))
+        .hover(|s| if on { s } else { s.bg(rgb(HOVER)) })
+        .text_xs()
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_color(if on { rgb(INK) } else { rgb(STONE) })
+        .child("动态灵敏")
+        .on_click(cx.listener(|this, _, _, cx| {
+            this.service.update(cx, |service, cx| {
+                service.toggle_audio_dynamic();
+                cx.notify();
+            });
+        }))
 }
 
 fn pane_tabs(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {

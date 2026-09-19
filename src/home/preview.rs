@@ -453,10 +453,10 @@ fn audio_level(phase: f32, rms: f32, loud: bool) -> Rgb {
 
 fn audio_target_gain(rms: f32, loud: bool) -> f32 {
     let level = (rms / 0.25).clamp(0.0, 1.0);
-    0.5 + if loud {
-        0.12 + level * 0.38
+    if loud {
+        0.12 + level * 0.88
     } else {
-        level * 0.22
+        level * 0.5
     }
 }
 
@@ -494,7 +494,7 @@ fn chase_audio_gain(target: f32) -> f32 {
     STATE.with(|slot| {
         let now = Instant::now();
         let next = match slot.get() {
-            None => chase_gain(0.5, target, 1.0 / 60.0),
+            None => chase_gain(0.0, target, 1.0 / 60.0),
             Some((prev_at, prev)) => {
                 let dt = now.saturating_duration_since(prev_at).as_secs_f32().min(1.0 / 30.0);
                 chase_gain(prev, target, dt)
@@ -617,9 +617,8 @@ mod tests {
     fn audio_brighter_when_louder() {
         let floor = luma(0.0, false);
         let peak = luma(0.25, true);
-        assert!(floor > 0);
-        assert!(peak > floor);
-        assert!(floor * 100 / peak.max(1) >= 40);
+        assert_eq!(floor, 0);
+        assert!(peak > 0);
     }
 
     #[test]
@@ -632,10 +631,14 @@ mod tests {
         assert!(gain < 0.75);
         let mut down = 1.0;
         for _ in 0..12 {
-            down = chase_gain(down, 0.5, 1.0 / 60.0);
+            down = chase_gain(down, 0.0, 1.0 / 60.0);
         }
         assert!(down < 0.97);
         assert!(down > 0.85);
+        for _ in 0..400 {
+            down = chase_gain(down, 0.0, 1.0 / 60.0);
+        }
+        assert_eq!(down, 0.0);
         assert_eq!(chase_gain(0.8, 0.8, 1.0), 0.8);
     }
 }

@@ -61,6 +61,8 @@ pub struct RearSnap {
     pub audio: bool,
     #[serde(default = "default_audio_sensitivity")]
     pub audio_sensitivity: u8,
+    #[serde(default)]
+    pub audio_dynamic: bool,
 }
 
 fn default_true() -> bool {
@@ -108,6 +110,7 @@ impl Default for RearSnap {
             speed: default_speed(),
             audio: false,
             audio_sensitivity: default_audio_sensitivity(),
+            audio_dynamic: false,
         }
     }
 }
@@ -230,6 +233,7 @@ impl RearSnap {
             speed: rear.speed.byte(),
             audio: matches!(rear.look, RearLook::Audio),
             audio_sensitivity: default_audio_sensitivity(),
+            audio_dynamic: false,
         }
     }
 }
