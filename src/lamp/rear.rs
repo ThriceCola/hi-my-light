@@ -4,6 +4,7 @@ use hi_my_light::{Channel, Command, Effect, Frame, Level, Rgb, Speed};
 pub enum RearLook {
     Solid(Rgb),
     Play(Effect),
+    Audio,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -22,6 +23,7 @@ impl Rear {
         let (solid, effect) = match look {
             RearLook::Solid(color) => (color, Effect::RainbowFwd),
             RearLook::Play(effect) => (Rgb::new(0xE0, 0xA8, 0x5C), effect),
+            RearLook::Audio => (Rgb::new(0xE0, 0xA8, 0x5C), Effect::RainbowFwd),
         };
         Self {
             on,
@@ -73,6 +75,11 @@ impl Rear {
         self.look = RearLook::Play(self.effect);
     }
 
+    pub fn show_audio(&mut self) {
+        self.look = RearLook::Audio;
+        self.on = true;
+    }
+
     pub fn toggle(&mut self) {
         self.on = !self.on;
         if self.on && self.level < Level::from_byte(8) {
@@ -104,6 +111,7 @@ impl Rear {
         match self.look {
             RearLook::Solid(rgb) => rgb.frame(),
             RearLook::Play(effect) => effect.frame(),
+            RearLook::Audio => Rgb::BLACK.scroll_frame(),
         }
     }
 

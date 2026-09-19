@@ -31,6 +31,7 @@ pub enum Face {
 pub enum RearPane {
     Solid,
     Motion,
+    Audio,
 }
 
 pub struct HomeView {
@@ -53,6 +54,7 @@ impl HomeView {
         let (rear_pane, effect_group, sv_hue) = match rear.look {
             RearLook::Play(effect) => (RearPane::Motion, effect.group(), rear.solid.hue()),
             RearLook::Solid(color) => (RearPane::Solid, rear.effect.group(), color.hue()),
+            RearLook::Audio => (RearPane::Audio, rear.effect.group(), rear.solid.hue()),
         };
         Self {
             service,

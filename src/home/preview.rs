@@ -27,6 +27,8 @@ pub struct LampPreview {
     pub rear_level: f32,
     pub rear: RearLook,
     pub phase: f32,
+    pub audio_loud: bool,
+    pub audio_rms: f32,
 }
 
 struct Layout {
@@ -114,7 +116,20 @@ fn paint_wall_wash(
         return;
     }
 
-    let sample = |t: f32| rear_rgb(preview.rear, t, preview.phase).scale(0.55 + rear * 0.45);
+    let phase = match preview.rear {
+        RearLook::Audio => audio_color_phase(),
+        _ => preview.phase,
+    };
+    let sample = |t: f32| {
+        rear_rgb(
+            preview.rear,
+            t,
+            phase,
+            preview.audio_loud,
+            preview.audio_rms,
+        )
+        .scale(0.55 + rear * 0.45)
+    };
     let mid = layout.bar.center().x;
     let bar_w = layout.bar.size.width;
     let bottom = layout.bar.origin.y + layout.bar.size.height * 0.45;
@@ -224,10 +239,11 @@ fn paint_front_bar(bar: Bounds<Pixels>, kelvin: u32, front: f32, window: &mut Wi
     }
 }
 
-fn rear_rgb(look: RearLook, t: f32, phase: f32) -> Rgb {
+fn rear_rgb(look: RearLook, t: f32, phase: f32, loud: bool, rms: f32) -> Rgb {
     match look {
         RearLook::Solid(rgb) => rgb,
         RearLook::Play(effect) => effect_rgb(effect, t, phase),
+        RearLook::Audio => audio_level(phase, rms, loud),
     }
 }
 
@@ -236,6 +252,7 @@ pub fn period_ms(look: RearLook, speed: f32) -> u64 {
     let tween = |slow: f32, fast: f32| (slow + (fast - slow) * s).round() as u64;
     match look {
         RearLook::Solid(_) => tween(18000.0, 8000.0),
+        RearLook::Audio => 28000,
         RearLook::Play(effect) => match effect {
             Effect::RainbowEnergy
             | Effect::RainbowJump
@@ -416,6 +433,33 @@ fn wrap_index(i: i32, n: usize) -> usize {
     (((i % n) + n) % n) as usize
 }
 
+/// 整条同色，颜色慢慢过渡；响度只改亮度。
+fn audio_level(phase: f32, rms: f32, loud: bool) -> Rgb {
+    let pal = [
+        DUSTY_RED,
+        DUSTY_GREEN,
+        DUSTY_BLUE,
+        DUSTY_YELLOW,
+        DUSTY_CYAN,
+        DUSTY_PURPLE,
+        DUSTY_WHITE,
+    ];
+    let cycle = phase.rem_euclid(1.0) * pal.len() as f32;
+    let i = wrap_index(cycle.floor() as i32, pal.len());
+    let j = wrap_index(i as i32 + 1, pal.len());
+    let color = pal[i].lerp(pal[j], cycle.fract());
+    let level = (rms / 0.25).clamp(0.0, 1.0);
+    let gain = 0.5 + if loud { 0.12 + level * 0.38 } else { level * 0.22 };
+    color.scale(gain)
+}
+
+fn audio_color_phase() -> f32 {
+    const PERIOD_S: f32 = 28.0;
+    static ORIGIN: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    let start = ORIGIN.get_or_init(std::time::Instant::now);
+    (start.elapsed().as_secs_f32() / PERIOD_S).fract()
+}
+
 fn wrap_dist(a: f32, b: f32) -> f32 {
     (a - b)
         .abs()
@@ -485,12 +529,44 @@ fn palette(effect: Effect) -> &'static [Rgb] {
 
 #[cfg(test)]
 mod tests {
-    use super::preview_gain;
+    use super::{audio_level, preview_gain};
+
+    fn luma(rms: f32, loud: bool) -> u16 {
+        let c = audio_level(0.0, rms, loud);
+        u16::from(c.r) + u16::from(c.g) + u16::from(c.b)
+    }
 
     #[test]
     fn lowest_on_is_still_visible() {
         assert!(preview_gain(true, 1.0) >= 0.38);
         assert_eq!(preview_gain(true, 100.0), 1.0);
         assert_eq!(preview_gain(false, 100.0), 0.0);
+    }
+
+    #[test]
+    fn audio_is_uniform_across_the_bar() {
+        use crate::lamp::RearLook;
+        use super::rear_rgb;
+        let look = RearLook::Audio;
+        assert_eq!(
+            rear_rgb(look, 0.05, 0.3, true, 0.12),
+            rear_rgb(look, 0.95, 0.3, true, 0.12)
+        );
+    }
+
+    #[test]
+    fn audio_color_shifts_with_phase() {
+        let a = audio_level(0.0, 0.2, true);
+        let b = audio_level(0.5, 0.2, true);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn audio_brighter_when_louder() {
+        let floor = luma(0.0, false);
+        let peak = luma(0.25, true);
+        assert!(floor > 0);
+        assert!(peak > floor);
+        assert!(floor * 100 / peak.max(1) >= 40);
     }
 }

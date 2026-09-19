@@ -1,21 +1,23 @@
+use gpui::prelude::*;
 use gpui::{
     Bounds, Context, DragMoveEvent, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, StatefulInteractiveElement, Styled, Window, canvas, div, fill,
-    prelude::*, px, rgb,
+    ParentElement, Pixels, StatefulInteractiveElement, Styled, Window, canvas, div, fill, px,
+    relative, rgb,
 };
 
 use hi_my_light::{Effect, EffectGroup, Rgb};
 
 use crate::lamp::RearLook;
-use crate::theme::{HOVER, INK, LINE, PANEL, PAPER, STONE, power_switch, step_btn, tone};
+use crate::theme::{
+    HOVER, INK, LINE, MIST, PANEL, PAPER, STONE, TRACK, power_switch, step_btn, tone,
+};
 
 use super::drag::{Track, TrackDrag};
 use super::slider::{self, Fill};
-use super::tabs;
-use super::{HomeView, RearPane};
+use super::{HomeView, RearPane, tabs};
 
 pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
-    let (on, level, speed, look, solid, effect) = {
+    let (on, level, speed, look, solid, effect, rms, loud, audio_caption, sensitivity) = {
         let snap = this.service.read(cx);
         (
             snap.rear.on,
@@ -24,12 +26,25 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
             snap.rear.look,
             snap.rear.solid,
             snap.rear.effect,
+            snap.audio_rms,
+            snap.audio_loud,
+            snap.audio_caption(),
+            snap.audio_sensitivity.percent(),
         )
     };
     let motion = this.rear_pane == RearPane::Motion;
+    let audio = this.rear_pane == RearPane::Audio;
     let glow = if on {
         if motion {
             PAPER
+        } else if audio {
+            if loud {
+                PAPER
+            } else if audio_caption == "暂缓" {
+                MIST
+            } else {
+                LINE
+            }
         } else {
             solid.packed()
         }
@@ -38,6 +53,8 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
     };
     let right = if motion {
         effect.name().into()
+    } else if audio {
+        audio_caption.into()
     } else {
         format!("{:06X}", solid.packed())
     };
@@ -49,29 +66,42 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
         .w_full()
         .min_h(px(0.))
         .child(pane_tabs(this, cx))
-        .child(readout(on, level, glow, right, motion, cx))
-        .child(slider_step(
-            Track::RearLevel,
-            level / 100.0,
-            Fill::Solid(glow),
-            "rear-bri-dec",
-            "rear-bri-inc",
-            cx.listener(move |this, _, _, cx| {
-                this.service.update(cx, |service, cx| {
-                    service.set_rear_level(level - 5.0);
-                    service.flush_now();
-                    cx.notify();
-                });
-            }),
-            cx.listener(move |this, _, _, cx| {
-                this.service.update(cx, |service, cx| {
-                    service.set_rear_level(level + 5.0);
-                    service.flush_now();
-                    cx.notify();
-                });
-            }),
+        .child(readout(
+            on,
+            level,
+            speed,
+            sensitivity,
+            rms,
+            glow,
+            right,
+            motion,
+            audio,
             cx,
         ))
+        .when(!audio, |col| {
+            col.child(slider_step(
+                Track::RearLevel,
+                level / 100.0,
+                Fill::Solid(glow),
+                "rear-bri-dec",
+                "rear-bri-inc",
+                cx.listener(move |this, _, _, cx| {
+                    this.service.update(cx, |service, cx| {
+                        service.set_rear_level(level - 5.0);
+                        service.flush_now();
+                        cx.notify();
+                    });
+                }),
+                cx.listener(move |this, _, _, cx| {
+                    this.service.update(cx, |service, cx| {
+                        service.set_rear_level(level + 5.0);
+                        service.flush_now();
+                        cx.notify();
+                    });
+                }),
+                cx,
+            ))
+        })
         .when(motion, |col| {
             col.child(slider_step(
                 Track::RearSpeed,
@@ -96,11 +126,41 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
                 cx,
             ))
         })
-        .when(!motion, |col| {
+        .when(!motion && !audio, |col| {
             col.child(presets(look, cx)).child(custom_color(solid, cx))
         })
         .when(motion, |col| {
             col.child(groups(this, cx)).child(effects(this, look, cx))
+        })
+        .when(audio, |col| {
+            col.child(
+                div()
+                    .w_full()
+                    .border_t_1()
+                    .border_color(rgb(LINE))
+                    .child(slider_step(
+                        Track::AudioSense,
+                        sensitivity / 100.0,
+                        Fill::Solid(if on { PAPER } else { LINE }),
+                        "rear-sense-dec",
+                        "rear-sense-inc",
+                        cx.listener(move |this, _, _, cx| {
+                            this.service.update(cx, |service, cx| {
+                                service.set_audio_sensitivity(sensitivity - 5.0);
+                                service.flush_now();
+                                cx.notify();
+                            });
+                        }),
+                        cx.listener(move |this, _, _, cx| {
+                            this.service.update(cx, |service, cx| {
+                                service.set_audio_sensitivity(sensitivity + 5.0);
+                                service.flush_now();
+                                cx.notify();
+                            });
+                        }),
+                        cx,
+                    )),
+            )
         })
         .child(
             div()
@@ -152,7 +212,7 @@ fn pane_tabs(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
             "rear-pane-motion",
             "动效",
             this.rear_pane == RearPane::Motion,
-            true,
+            false,
             cx.listener(|this, _, _, cx| {
                 this.rear_pane = RearPane::Motion;
                 this.hsv_open = false;
@@ -164,52 +224,134 @@ fn pane_tabs(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
                 });
             }),
         ))
+        .child(tabs::tab(
+            "rear-pane-audio",
+            "拾音",
+            this.rear_pane == RearPane::Audio,
+            true,
+            cx.listener(|this, _, _, cx| {
+                this.rear_pane = RearPane::Audio;
+                this.hsv_open = false;
+                this.service.update(cx, |service, cx| {
+                    service.show_rear_audio();
+                    cx.notify();
+                });
+            }),
+        ))
 }
 
 fn readout(
     on: bool,
     level: f32,
+    speed: f32,
+    sensitivity: f32,
+    rms: f32,
     glow: u32,
     right: String,
     motion: bool,
+    audio: bool,
     cx: &mut Context<HomeView>,
 ) -> impl IntoElement {
-    div()
+    let row = div()
         .flex_none()
         .flex()
         .w_full()
         .items_end()
         .justify_between()
         .py_4()
-        .opacity(if on { 1.0 } else { 0.32 })
-        .child(metric("亮度", format!("{:.0}", level), glow, false))
-        .child(
-            div()
-                .id("rear-color")
-                .flex()
-                .flex_col()
-                .items_end()
-                .when(!motion, |d| {
-                    d.cursor_pointer().on_click(cx.listener(|this, _, _, cx| {
-                        this.hsv_open = true;
-                        cx.notify();
-                    }))
-                })
-                .child(metric(
-                    if motion { "灯效" } else { "颜色" },
-                    right,
-                    glow,
-                    true,
-                )),
-        )
+        .opacity(if on { 1.0 } else { 0.32 });
+    if audio {
+        div()
+            .flex_none()
+            .flex()
+            .flex_col()
+            .w_full()
+            .opacity(if on { 1.0 } else { 0.32 })
+            .gap_3()
+            .child(
+                div()
+                    .flex()
+                    .w_full()
+                    .items_end()
+                    .justify_between()
+                    .pt_4()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .items_start()
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(rgb(STONE))
+                                    .child("音频"),
+                            )
+                            .child(
+                                div()
+                                    .mt_1()
+                                    .text_size(px(72.))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .line_height(px(64.))
+                                    .text_color(rgb(glow))
+                                    .child(right),
+                            ),
+                    )
+                    .child(metric(
+                        "灵敏",
+                        format!("{:.0}", sensitivity),
+                        PAPER,
+                        false,
+                        true,
+                    )),
+            )
+            .child(audio_meter(rms, glow))
+    } else {
+        row.child(metric("亮度", format!("{:.0}", level), glow, true, false))
+            .child(
+                div()
+                    .id("rear-color")
+                    .flex()
+                    .items_end()
+                    .gap_3()
+                    .when(!motion, |d| {
+                        d.cursor_pointer().on_click(cx.listener(|this, _, _, cx| {
+                            this.hsv_open = true;
+                            cx.notify();
+                        }))
+                    })
+                    .child(metric(
+                        if motion { "灯效" } else { "颜色" },
+                        right,
+                        glow,
+                        false,
+                        true,
+                    ))
+                    .when(motion, |d| {
+                        d.child(div().w(px(64.)).flex_none().child(metric(
+                            "速度",
+                            format!("{:.0}", speed),
+                            glow,
+                            false,
+                            true,
+                        )))
+                    }),
+            )
+    }
 }
 
-fn metric(label: &'static str, value: String, color: u32, right: bool) -> impl IntoElement {
+fn metric(
+    label: &'static str,
+    value: String,
+    color: u32,
+    large: bool,
+    end: bool,
+) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
-        .when(right, |d| d.items_end())
-        .when(!right, |d| d.items_start())
+        .when(end, |d| d.items_end())
+        .when(!end, |d| d.items_start())
         .child(
             div()
                 .text_xs()
@@ -220,9 +362,9 @@ fn metric(label: &'static str, value: String, color: u32, right: bool) -> impl I
         .child(
             div()
                 .mt_1()
-                .text_size(if right { px(36.) } else { px(96.) })
+                .text_size(if large { px(96.) } else { px(36.) })
                 .font_weight(gpui::FontWeight::BOLD)
-                .line_height(if right { px(42.) } else { px(82.) })
+                .line_height(if large { px(82.) } else { px(42.) })
                 .text_color(rgb(color))
                 .child(value),
         )
@@ -305,40 +447,28 @@ pub fn hsv_popover(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElem
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_mouse_move(|_, _, cx| cx.stop_propagation())
                 .child(
-                    div()
-                        .flex()
-                        .w_full()
-                        .items_center()
-                        .justify_end()
-                        .child(
-                            div()
-                                .id("hsv-done")
-                                .px_2()
-                                .py_1()
-                                .cursor_pointer()
-                                .text_xs()
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .border_1()
-                                .border_color(rgb(LINE))
-                                .text_color(rgb(STONE))
-                                .hover(|s| s.bg(rgb(HOVER)).text_color(rgb(PAPER)))
-                                .child("关闭")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.hsv_open = false;
-                                    this.end_drag(cx);
-                                    cx.notify();
-                                })),
-                        ),
+                    div().flex().w_full().items_center().justify_end().child(
+                        div()
+                            .id("hsv-done")
+                            .px_2()
+                            .py_1()
+                            .cursor_pointer()
+                            .text_xs()
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .border_1()
+                            .border_color(rgb(LINE))
+                            .text_color(rgb(STONE))
+                            .hover(|s| s.bg(rgb(HOVER)).text_color(rgb(PAPER)))
+                            .child("关闭")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.hsv_open = false;
+                                this.end_drag(cx);
+                                cx.notify();
+                            })),
+                    ),
                 )
                 .child(hsv_board(this.sv_hue, sat, val, cx))
-                .child(slider::row(
-                    "色相",
-                    hex,
-                    Track::Hue,
-                    hue_t,
-                    Fill::Hue,
-                    cx,
-                ))
+                .child(slider::row("色相", hex, Track::Hue, hue_t, Fill::Hue, cx))
                 .child(
                     div()
                         .flex()
@@ -380,18 +510,20 @@ fn hsv_board(hue: f32, sat: f32, val: f32, cx: &mut Context<HomeView>) -> impl I
             }),
         )
         .on_drag(TrackDrag(Track::SatVal), |drag, _, _, cx| cx.new(|_| *drag))
-        .on_drag_move(cx.listener(move |this, ev: &DragMoveEvent<TrackDrag>, _, cx| {
-            if ev.drag(cx).0 != Track::SatVal {
-                return;
-            }
-            this.dragging = Some(Track::SatVal);
-            slider::apply_sat_val(
-                this,
-                slider::ratio(ev.event.position.x, ev.bounds),
-                slider::ratio_y(ev.event.position.y, ev.bounds),
-                cx,
-            );
-        }))
+        .on_drag_move(
+            cx.listener(move |this, ev: &DragMoveEvent<TrackDrag>, _, cx| {
+                if ev.drag(cx).0 != Track::SatVal {
+                    return;
+                }
+                this.dragging = Some(Track::SatVal);
+                slider::apply_sat_val(
+                    this,
+                    slider::ratio(ev.event.position.x, ev.bounds),
+                    slider::ratio_y(ev.event.position.y, ev.bounds),
+                    cx,
+                );
+            }),
+        )
         .on_mouse_up(
             MouseButton::Left,
             cx.listener(|this, _, _, cx| this.end_drag(cx)),
@@ -443,16 +575,28 @@ fn paint_sv(bounds: Bounds<Pixels>, hue: f32, sat: f32, val: f32, window: &mut W
         origin: gpui::point(outer.origin.x + px(3.), outer.origin.y + px(3.)),
         size: gpui::size(px(10.), px(10.)),
     };
-    window.paint_quad(fill(
-        inner,
-        rgb(Rgb::from_hsv(hue, sat, val).packed()),
-    ));
+    window.paint_quad(fill(inner, rgb(Rgb::from_hsv(hue, sat, val).packed())));
+}
+
+fn audio_meter(rms: f32, fill_color: u32) -> impl IntoElement {
+    let fill = ((rms / 0.25).clamp(0.0, 1.0) * 100.0).round() as f32 / 100.0;
+    div()
+        .flex_none()
+        .w_full()
+        .pb_3()
+        .child(
+            div()
+                .w_full()
+                .h(px(8.))
+                .bg(rgb(TRACK))
+                .child(div().h_full().w(relative(fill)).bg(rgb(fill_color))),
+        )
 }
 
 fn presets(look: RearLook, cx: &mut Context<HomeView>) -> impl IntoElement {
     let current = match look {
         RearLook::Solid(rgb) => Some(rgb),
-        RearLook::Play(_) => None,
+        RearLook::Play(_) | RearLook::Audio => None,
     };
     let last = Rgb::PRESETS.len().saturating_sub(1);
     div()
@@ -462,31 +606,36 @@ fn presets(look: RearLook, cx: &mut Context<HomeView>) -> impl IntoElement {
         .w_full()
         .border_t_1()
         .border_color(rgb(LINE))
-        .children(Rgb::PRESETS.into_iter().enumerate().map(|(i, (name, color))| {
-            let active = current == Some(color);
-            div()
-                .id(name)
-                .flex_1()
-                .h(px(48.))
-                .cursor_pointer()
-                .flex()
-                .justify_center()
-                .items_center()
-                .when(i != last, |d| d.border_r_1().border_color(rgb(LINE)))
-                .bg(rgb(color.packed()))
-                .when(active, |d| d.border_1().border_color(rgb(PAPER)))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    let (h, s, _) = color.hsv();
-                    if s > 0.04 {
-                        this.sv_hue = h;
-                    }
-                    this.service.update(cx, |service, cx| {
-                        service.set_rgb(color);
-                        service.flush_now();
-                        cx.notify();
-                    });
-                }))
-        }))
+        .children(
+            Rgb::PRESETS
+                .into_iter()
+                .enumerate()
+                .map(|(i, (name, color))| {
+                    let active = current == Some(color);
+                    div()
+                        .id(name)
+                        .flex_1()
+                        .h(px(48.))
+                        .cursor_pointer()
+                        .flex()
+                        .justify_center()
+                        .items_center()
+                        .when(i != last, |d| d.border_r_1().border_color(rgb(LINE)))
+                        .bg(rgb(color.packed()))
+                        .when(active, |d| d.border_1().border_color(rgb(PAPER)))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            let (h, s, _) = color.hsv();
+                            if s > 0.04 {
+                                this.sv_hue = h;
+                            }
+                            this.service.update(cx, |service, cx| {
+                                service.set_rgb(color);
+                                service.flush_now();
+                                cx.notify();
+                            });
+                        }))
+                }),
+        )
 }
 
 fn custom_color(solid: Rgb, cx: &mut Context<HomeView>) -> impl IntoElement {
@@ -505,13 +654,7 @@ fn custom_color(solid: Rgb, cx: &mut Context<HomeView>) -> impl IntoElement {
         .border_color(rgb(LINE))
         .cursor_pointer()
         .when(custom, |d| d.bg(rgb(PAPER)))
-        .hover(|s| {
-            if custom {
-                s
-            } else {
-                s.bg(rgb(HOVER))
-            }
-        })
+        .hover(|s| if custom { s } else { s.bg(rgb(HOVER)) })
         .on_click(cx.listener(|this, _, _, cx| {
             this.hsv_open = true;
             cx.notify();
@@ -555,13 +698,7 @@ fn groups(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
                 .items_center()
                 .when(i != last, |d| d.border_r_1().border_color(rgb(LINE)))
                 .when(active, |d| d.bg(rgb(PAPER)))
-                .hover(|s| {
-                    if active {
-                        s
-                    } else {
-                        s.bg(rgb(HOVER))
-                    }
-                })
+                .hover(|s| if active { s } else { s.bg(rgb(HOVER)) })
                 .text_xs()
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_color(if active { rgb(INK) } else { rgb(STONE) })
@@ -576,7 +713,7 @@ fn groups(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
 fn effects(this: &HomeView, look: RearLook, cx: &mut Context<HomeView>) -> impl IntoElement {
     let current = match look {
         RearLook::Play(effect) => Some(effect),
-        RearLook::Solid(_) => None,
+        RearLook::Solid(_) | RearLook::Audio => None,
     };
     let group = this.effect_group;
     div()
@@ -593,7 +730,10 @@ fn effects(this: &HomeView, look: RearLook, cx: &mut Context<HomeView>) -> impl 
                 .map(|effect| {
                     let active = current == Some(effect);
                     div()
-                        .id(gpui::SharedString::from(format!("fx-{:02x}", effect.byte())))
+                        .id(gpui::SharedString::from(format!(
+                            "fx-{:02x}",
+                            effect.byte()
+                        )))
                         .w_full()
                         .h(px(48.))
                         .cursor_pointer()
@@ -603,13 +743,7 @@ fn effects(this: &HomeView, look: RearLook, cx: &mut Context<HomeView>) -> impl 
                         .border_b_1()
                         .border_color(rgb(LINE))
                         .when(active, |d| d.bg(rgb(PAPER)))
-                        .hover(|s| {
-                            if active {
-                                s
-                            } else {
-                                s.bg(rgb(HOVER))
-                            }
-                        })
+                        .hover(|s| if active { s } else { s.bg(rgb(HOVER)) })
                         .text_xs()
                         .font_weight(gpui::FontWeight::SEMIBOLD)
                         .text_color(if active { rgb(INK) } else { rgb(STONE) })

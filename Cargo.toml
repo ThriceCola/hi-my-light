@@ -100,6 +100,8 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "b7b1d1a2
 ksni = { version = "0.3", default-features = false, features = ["tokio"] }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 futures-lite = "2"
+libpulse-binding = "2"
+libpulse-simple-binding = "2"
 
 [target.'cfg(windows)'.dependencies]
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "b7b1d1a2c78baae9d51a326c9221ee2ffb60726e" }

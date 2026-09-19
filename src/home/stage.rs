@@ -28,9 +28,16 @@ pub fn render_stage(
         rear_level: snap.rear.level.percent(),
         rear: snap.rear.look,
         phase: 0.0,
+        audio_loud: snap.audio_loud,
+        audio_rms: snap.audio_rms,
     };
-    let playing = preview.rear_on && matches!(preview.rear, RearLook::Play(_));
+    let playing = preview.rear_on && matches!(preview.rear, RearLook::Play(_) | RearLook::Audio);
     let period = preview::period_ms(preview.rear, snap.rear.speed.percent());
+    let anim_key = match preview.rear {
+        RearLook::Solid(_) => 0u32,
+        RearLook::Audio => 1,
+        RearLook::Play(effect) => 2 + u32::from(effect.byte()),
+    };
     let aspect = preview.aspect;
     let front_on = preview.front_on;
     let front_level = preview.front_level;
@@ -38,6 +45,8 @@ pub fn render_stage(
     let rear_on = preview.rear_on;
     let rear_level = preview.rear_level;
     let rear = preview.rear;
+    let audio_loud = preview.audio_loud;
+    let audio_rms = preview.audio_rms;
 
     div()
         .id("stage")
@@ -58,7 +67,7 @@ pub fn render_stage(
                         .id("halo-paint")
                         .size_full()
                         .with_animation(
-                            ("lamp-preview", period),
+                            ("lamp-preview", anim_key),
                             Animation::new(Duration::from_millis(period)).repeat(),
                             move |this, delta| {
                                 this.child(
@@ -76,6 +85,8 @@ pub fn render_stage(
                                                     rear_level,
                                                     rear,
                                                     phase: if playing { delta } else { 0.0 },
+                                                    audio_loud,
+                                                    audio_rms,
                                                 },
                                                 window,
                                             );

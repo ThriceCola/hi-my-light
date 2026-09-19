@@ -22,6 +22,7 @@ pub struct Tracks {
     pub front_cct: Bounds<Pixels>,
     pub rear_level: Bounds<Pixels>,
     pub rear_speed: Bounds<Pixels>,
+    pub audio_sense: Bounds<Pixels>,
     pub hue: Bounds<Pixels>,
     pub sat_val: Bounds<Pixels>,
 }
@@ -33,6 +34,7 @@ impl Tracks {
             Track::FrontCct => self.front_cct,
             Track::RearLevel => self.rear_level,
             Track::RearSpeed => self.rear_speed,
+            Track::AudioSense => self.audio_sense,
             Track::Hue => self.hue,
             Track::SatVal => self.sat_val,
         }
@@ -44,6 +46,7 @@ impl Tracks {
             Track::FrontCct => self.front_cct = bounds,
             Track::RearLevel => self.rear_level = bounds,
             Track::RearSpeed => self.rear_speed = bounds,
+            Track::AudioSense => self.audio_sense = bounds,
             Track::Hue => self.hue = bounds,
             Track::SatVal => self.sat_val = bounds,
         }
@@ -254,10 +257,13 @@ fn apply_track(this: &mut HomeView, track: Track, t: f32, cx: &mut Context<HomeV
             Track::FrontCct => service.set_cct(3000.0 + t * 3000.0),
             Track::RearLevel => service.set_rear_level(t * 100.0),
             Track::RearSpeed => service.set_speed(t * 100.0),
+            Track::AudioSense => service.set_audio_sensitivity(t * 100.0),
             Track::Hue => {
                 let (_, s, v) = match service.rear.look {
                     crate::lamp::RearLook::Solid(color) => color.hsv(),
-                    crate::lamp::RearLook::Play(_) => (0.0, 1.0, 1.0),
+                    crate::lamp::RearLook::Play(_) | crate::lamp::RearLook::Audio => {
+                        (0.0, 1.0, 1.0)
+                    }
                 };
                 service.set_rgb(hi_my_light::Rgb::from_hsv(hue, s, v));
             }
@@ -291,6 +297,7 @@ const fn track_id(track: Track) -> &'static str {
         Track::FrontCct => "track-front-cct",
         Track::RearLevel => "track-rear-level",
         Track::RearSpeed => "track-rear-speed",
+        Track::AudioSense => "track-audio-sense",
         Track::Hue => "track-hue",
         Track::SatVal => "track-sat-val",
     }

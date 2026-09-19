@@ -43,6 +43,7 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
                         this.sv_hue = color.hue();
                         RearPane::Solid
                     }
+                    RearLook::Audio => RearPane::Audio,
                 };
                 cx.notify();
             }),

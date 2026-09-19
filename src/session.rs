@@ -57,6 +57,10 @@ pub struct RearSnap {
     pub playing: Option<bool>,
     #[serde(default = "default_speed")]
     pub speed: u8,
+    #[serde(default)]
+    pub audio: bool,
+    #[serde(default = "default_audio_sensitivity")]
+    pub audio_sensitivity: u8,
 }
 
 fn default_true() -> bool {
@@ -79,6 +83,10 @@ fn default_speed() -> u8 {
     0x5a
 }
 
+fn default_audio_sensitivity() -> u8 {
+    70
+}
+
 impl Default for FrontSnap {
     fn default() -> Self {
         Self {
@@ -98,6 +106,8 @@ impl Default for RearSnap {
             effect: None,
             playing: None,
             speed: default_speed(),
+            audio: false,
+            audio_sensitivity: default_audio_sensitivity(),
         }
     }
 }
@@ -182,7 +192,9 @@ impl Session {
             .and_then(effect_from_byte)
             .unwrap_or(Effect::RainbowFwd);
         let playing = self.rear.playing.unwrap_or(self.rear.effect.is_some());
-        let look = if playing {
+        let look = if self.rear.audio {
+            RearLook::Audio
+        } else if playing {
             RearLook::Play(effect)
         } else {
             RearLook::Solid(solid)
@@ -216,6 +228,8 @@ impl RearSnap {
             effect: Some(rear.effect.byte()),
             playing: Some(matches!(rear.look, RearLook::Play(_))),
             speed: rear.speed.byte(),
+            audio: matches!(rear.look, RearLook::Audio),
+            audio_sensitivity: default_audio_sensitivity(),
         }
     }
 }
@@ -286,5 +300,26 @@ mod tests {
         .rear_lamp();
         assert_eq!(restored.look, RearLook::Play(Effect::RainbowJump));
         assert_eq!(restored.solid, Rgb::new(1, 2, 3));
+    }
+
+    #[test]
+    fn audio_look_roundtrip() {
+        let mut rear = Rear::new(
+            true,
+            Level::from_byte(40),
+            RearLook::Solid(Rgb::new(0x11, 0x22, 0x33)),
+            Level::from_byte(0x5a),
+        );
+        rear.show_audio();
+        let snap = RearSnap::from_lamp(&rear);
+        assert!(snap.audio);
+        assert_eq!(snap.playing, Some(false));
+        let restored = Session {
+            rear: snap,
+            ..Session::default()
+        }
+        .rear_lamp();
+        assert_eq!(restored.look, RearLook::Audio);
+        assert_eq!(restored.solid, Rgb::new(0x11, 0x22, 0x33));
     }
 }

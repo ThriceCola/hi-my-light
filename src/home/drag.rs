@@ -6,6 +6,7 @@ pub enum Track {
     FrontCct,
     RearLevel,
     RearSpeed,
+    AudioSense,
     Hue,
     SatVal,
 }

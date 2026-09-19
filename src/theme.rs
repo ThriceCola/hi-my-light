@@ -11,6 +11,7 @@ pub const LINE: u32 = 0x3F3F46;
 pub const AMBER: u32 = 0xD4B896;
 pub const STONE: u32 = 0x8B8B93;
 pub const PAPER: u32 = 0xFAFAFA;
+pub const MIST: u32 = 0xD6D6DA;
 pub const HOVER: u32 = 0x141416;
 pub const TRACK: u32 = 0x27272A;
 pub const BAD: u32 = 0xEF4444;

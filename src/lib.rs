@@ -1,5 +1,6 @@
 //! hi-my-light BLE 后端。
 
+pub mod audio;
 pub mod device;
 pub mod error;
 pub mod manager;
