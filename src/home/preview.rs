@@ -1,3 +1,6 @@
+use std::cell::Cell;
+use std::time::Instant;
+
 use gpui::{
     Bounds, Pixels, Window, fill, point, px, rgb, size,
 };
@@ -120,15 +123,25 @@ fn paint_wall_wash(
         RearLook::Audio => audio_color_phase(),
         _ => preview.phase,
     };
-    let sample = |t: f32| {
-        rear_rgb(
-            preview.rear,
-            t,
-            phase,
-            preview.audio_loud,
+    let audio_gain = match preview.rear {
+        RearLook::Audio => Some(chase_audio_gain(audio_target_gain(
             preview.audio_rms,
-        )
-        .scale(0.55 + rear * 0.45)
+            preview.audio_loud,
+        ))),
+        _ => None,
+    };
+    let sample = |t: f32| {
+        let color = match audio_gain {
+            Some(gain) => audio_color(phase, gain),
+            None => rear_rgb(
+                preview.rear,
+                t,
+                phase,
+                preview.audio_loud,
+                preview.audio_rms,
+            ),
+        };
+        color.scale(0.55 + rear * 0.45)
     };
     let mid = layout.bar.center().x;
     let bar_w = layout.bar.size.width;
@@ -435,6 +448,19 @@ fn wrap_index(i: i32, n: usize) -> usize {
 
 /// 整条同色，颜色慢慢过渡；响度只改亮度。
 fn audio_level(phase: f32, rms: f32, loud: bool) -> Rgb {
+    audio_color(phase, audio_target_gain(rms, loud))
+}
+
+fn audio_target_gain(rms: f32, loud: bool) -> f32 {
+    let level = (rms / 0.25).clamp(0.0, 1.0);
+    0.5 + if loud {
+        0.12 + level * 0.38
+    } else {
+        level * 0.22
+    }
+}
+
+fn audio_color(phase: f32, gain: f32) -> Rgb {
     let pal = [
         DUSTY_RED,
         DUSTY_GREEN,
@@ -447,10 +473,36 @@ fn audio_level(phase: f32, rms: f32, loud: bool) -> Rgb {
     let cycle = phase.rem_euclid(1.0) * pal.len() as f32;
     let i = wrap_index(cycle.floor() as i32, pal.len());
     let j = wrap_index(i as i32 + 1, pal.len());
-    let color = pal[i].lerp(pal[j], cycle.fract());
-    let level = (rms / 0.25).clamp(0.0, 1.0);
-    let gain = 0.5 + if loud { 0.12 + level * 0.38 } else { level * 0.22 };
-    color.scale(gain)
+    pal[i].lerp(pal[j], cycle.fract()).scale(gain)
+}
+
+fn chase_gain(prev: f32, target: f32, dt: f32) -> f32 {
+    let speed = if target >= prev { 0.55 } else { 0.32 };
+    let step = speed * dt.max(0.0);
+    let delta = target - prev;
+    if delta.abs() <= step {
+        target
+    } else {
+        prev + delta.signum() * step
+    }
+}
+
+fn chase_audio_gain(target: f32) -> f32 {
+    thread_local! {
+        static STATE: Cell<Option<(Instant, f32)>> = const { Cell::new(None) };
+    }
+    STATE.with(|slot| {
+        let now = Instant::now();
+        let next = match slot.get() {
+            None => chase_gain(0.5, target, 1.0 / 60.0),
+            Some((prev_at, prev)) => {
+                let dt = now.saturating_duration_since(prev_at).as_secs_f32().min(1.0 / 30.0);
+                chase_gain(prev, target, dt)
+            }
+        };
+        slot.set(Some((now, next)));
+        next
+    })
 }
 
 fn audio_color_phase() -> f32 {
@@ -529,7 +581,7 @@ fn palette(effect: Effect) -> &'static [Rgb] {
 
 #[cfg(test)]
 mod tests {
-    use super::{audio_level, preview_gain};
+    use super::{audio_level, chase_gain, preview_gain};
 
     fn luma(rms: f32, loud: bool) -> u16 {
         let c = audio_level(0.0, rms, loud);
@@ -568,5 +620,22 @@ mod tests {
         assert!(floor > 0);
         assert!(peak > floor);
         assert!(floor * 100 / peak.max(1) >= 40);
+    }
+
+    #[test]
+    fn audio_gain_chases_target() {
+        let mut gain = 0.5;
+        for _ in 0..12 {
+            gain = chase_gain(gain, 1.0, 1.0 / 60.0);
+        }
+        assert!(gain > 0.55);
+        assert!(gain < 0.75);
+        let mut down = 1.0;
+        for _ in 0..12 {
+            down = chase_gain(down, 0.5, 1.0 / 60.0);
+        }
+        assert!(down < 0.97);
+        assert!(down > 0.85);
+        assert_eq!(chase_gain(0.8, 0.8, 1.0), 0.8);
     }
 }
