@@ -1,6 +1,8 @@
 use super::Frame;
 
-/// 后置纯色。`7e 07 05 03 RR GG BB 10 ef`
+/// 后置 RGB。`7e 07 05 03 RR GG BB TAG ef`
+///
+/// `TAG=0x10` 整条涂色；`TAG=0x20` 把这一色推进灯带（麦克风声控）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Rgb {
     pub r: u8,
@@ -9,13 +11,29 @@ pub struct Rgb {
 }
 
 impl Rgb {
+    pub const SOLID_TAG: u8 = 0x10;
+    pub const SCROLL_TAG: u8 = 0x20;
+
     pub const RED: Self = Self::new(0xff, 0x00, 0x00);
     pub const GREEN: Self = Self::new(0x00, 0xff, 0x00);
     pub const BLUE: Self = Self::new(0x00, 0x00, 0xff);
     pub const CYAN: Self = Self::new(0x00, 0xff, 0xff);
     pub const YELLOW: Self = Self::new(0xff, 0xff, 0x00);
+    pub const MAGENTA: Self = Self::new(0xff, 0x00, 0xff);
     pub const PURPLE: Self = Self::new(0xc0, 0x00, 0xff);
     pub const WHITE: Self = Self::new(0xff, 0xff, 0xff);
+    pub const BLACK: Self = Self::new(0x00, 0x00, 0x00);
+
+    /// 官方声控有声时的推进顺序。
+    pub const MIC_SCROLL: [Self; 7] = [
+        Self::RED,
+        Self::GREEN,
+        Self::BLUE,
+        Self::YELLOW,
+        Self::MAGENTA,
+        Self::CYAN,
+        Self::WHITE,
+    ];
 
     pub const PRESETS: [(&'static str, Self); 6] = [
         ("赤陶", Self::new(0xE0, 0x7A, 0x5F)),
@@ -98,8 +116,16 @@ impl Rgb {
         ((self.r as u32) << 16) | ((self.g as u32) << 8) | self.b as u32
     }
 
+    pub const fn tagged_frame(self, tag: u8) -> Frame {
+        Frame::pack([0x07, 0x05, 0x03, self.r, self.g, self.b, tag])
+    }
+
     pub const fn frame(self) -> Frame {
-        Frame::pack([0x07, 0x05, 0x03, self.r, self.g, self.b, 0x10])
+        self.tagged_frame(Self::SOLID_TAG)
+    }
+
+    pub const fn scroll_frame(self) -> Frame {
+        self.tagged_frame(Self::SCROLL_TAG)
     }
 }
 
@@ -123,6 +149,15 @@ mod tests {
         assert_eq!(Rgb::CYAN.frame().hex(), "7e 07 05 03 00 ff ff 10 ef");
         assert_eq!(Rgb::YELLOW.frame().hex(), "7e 07 05 03 ff ff 00 10 ef");
         assert_eq!(Rgb::WHITE.frame().hex(), "7e 07 05 03 ff ff ff 10 ef");
+        assert_eq!(
+            Rgb::BLACK.scroll_frame().hex(),
+            "7e 07 05 03 00 00 00 20 ef"
+        );
+        assert_eq!(Rgb::RED.scroll_frame().hex(), "7e 07 05 03 ff 00 00 20 ef");
+        assert_eq!(
+            Rgb::MAGENTA.scroll_frame().hex(),
+            "7e 07 05 03 ff 00 ff 20 ef"
+        );
     }
 
     #[test]
