@@ -29,46 +29,6 @@ name = "color-probe"
 path = "src/bin/color_probe.rs"
 
 [[bin]]
-name = "color-probe2"
-path = "src/bin/color_probe2.rs"
-
-[[bin]]
-name = "color-probe3"
-path = "src/bin/color_probe3.rs"
-
-[[bin]]
-name = "color-probe4"
-path = "src/bin/color_probe4.rs"
-
-[[bin]]
-name = "color-probe5"
-path = "src/bin/color_probe5.rs"
-
-[[bin]]
-name = "color-probe6"
-path = "src/bin/color_probe6.rs"
-
-[[bin]]
-name = "color-probe7"
-path = "src/bin/color_probe7.rs"
-
-[[bin]]
-name = "color-probe8"
-path = "src/bin/color_probe8.rs"
-
-[[bin]]
-name = "color-probe9"
-path = "src/bin/color_probe9.rs"
-
-[[bin]]
-name = "color-probe10"
-path = "src/bin/color_probe10.rs"
-
-[[bin]]
-name = "color-probe11"
-path = "src/bin/color_probe11.rs"
-
-[[bin]]
 name = "color-probe-stop"
 path = "src/bin/color_probe_stop.rs"
 
