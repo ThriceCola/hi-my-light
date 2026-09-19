@@ -5,7 +5,7 @@ use gpui::{
 
 use crate::theme::{HOVER, INK, LINE, PAPER, STONE};
 
-use super::{Face, HomeView};
+use super::{Face, HomeView, RearPane};
 use crate::lamp::RearLook;
 
 pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
@@ -17,7 +17,7 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
         .border_color(rgb(LINE))
         .child(tab(
             "face-front",
-            "FRONT",
+            "正面",
             this.face == Face::Front,
             false,
             cx.listener(|this, _, _, cx| {
@@ -28,20 +28,28 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
         ))
         .child(tab(
             "face-rear",
-            "REAR",
+            "背面",
             this.face == Face::Rear,
             true,
             cx.listener(|this, _, _, cx| {
                 this.face = Face::Rear;
-                if let RearLook::Play(effect) = this.service.read(cx).rear.look {
-                    this.effect_group = effect.group();
-                }
+                let rear = this.service.read(cx).rear;
+                this.rear_pane = match rear.look {
+                    RearLook::Play(effect) => {
+                        this.effect_group = effect.group();
+                        RearPane::Motion
+                    }
+                    RearLook::Solid(color) => {
+                        this.sv_hue = color.hue();
+                        RearPane::Solid
+                    }
+                };
                 cx.notify();
             }),
         ))
 }
 
-fn tab(
+pub(crate) fn tab(
     id: &'static str,
     label: &'static str,
     active: bool,

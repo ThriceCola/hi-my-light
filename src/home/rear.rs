@@ -7,156 +7,265 @@ use gpui::{
 use hi_my_light::{Effect, EffectGroup, Rgb};
 
 use crate::lamp::RearLook;
-use crate::theme::{HOVER, INK, LINE, PANEL, PAPER, STONE, tone};
+use crate::theme::{HOVER, INK, LINE, PANEL, PAPER, STONE, power_switch, step_btn, tone};
 
 use super::drag::{Track, TrackDrag};
-use super::widgets::{card, power_row};
 use super::slider::{self, Fill};
-use super::HomeView;
+use super::tabs;
+use super::{HomeView, RearPane};
 
 pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
-    let (on, level, speed, look) = {
+    let (on, level, speed, look, solid, effect) = {
         let snap = this.service.read(cx);
         (
             snap.rear.on,
             snap.rear.level.percent(),
             snap.rear.speed.percent(),
             snap.rear.look,
+            snap.rear.solid,
+            snap.rear.effect,
         )
     };
-    let playing = matches!(look, RearLook::Play(_));
-    let (sat, val, hex) = match look {
-        RearLook::Solid(color) => {
-            let (_, s, v) = color.hsv();
-            (s, v, format!("#{:06x}", color.packed()))
+    let motion = this.rear_pane == RearPane::Motion;
+    let glow = if on {
+        if motion {
+            PAPER
+        } else {
+            solid.packed()
         }
-        RearLook::Play(_) => (1.0, 1.0, "灯效".into()),
+    } else {
+        LINE
+    };
+    let right = if motion {
+        effect.name().into()
+    } else {
+        format!("{:06X}", solid.packed())
     };
 
     div()
+        .id("rear-page")
         .flex()
         .flex_col()
-        .size_full()
+        .w_full()
         .min_h(px(0.))
-        .gap_4()
-        .child(card().child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_3()
-                .child(power_row("后置氛围灯", on, cx.listener(|this, _, _, cx| {
-                    this.service.update(cx, |service, cx| {
-                        service.toggle_rear();
-                        cx.notify();
-                    });
-                })))
-                .child(slider::row(
-                    "亮度",
-                    format!("{:.0}%", level),
-                    Track::RearLevel,
-                    level / 100.0,
-                    Fill::Solid(match look {
-                        RearLook::Solid(c) => c.packed(),
-                        RearLook::Play(_) => PAPER,
-                    }),
-                    cx,
-                )),
+        .child(pane_tabs(this, cx))
+        .child(readout(on, level, glow, right, motion, cx))
+        .child(slider_step(
+            Track::RearLevel,
+            level / 100.0,
+            Fill::Solid(glow),
+            "rear-bri-dec",
+            "rear-bri-inc",
+            cx.listener(move |this, _, _, cx| {
+                this.service.update(cx, |service, cx| {
+                    service.set_rear_level(level - 5.0);
+                    service.flush_now();
+                    cx.notify();
+                });
+            }),
+            cx.listener(move |this, _, _, cx| {
+                this.service.update(cx, |service, cx| {
+                    service.set_rear_level(level + 5.0);
+                    service.flush_now();
+                    cx.notify();
+                });
+            }),
+            cx,
         ))
-        .child(card().child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_3()
-                .child(presets(look, cx))
-                .child(color_trigger(look, &hex, sat, val, this.sv_hue, cx)),
-        ))
-        .when(playing, |col| {
-            col.child(card().child(slider::row(
-                "速度",
-                format!("{:.0}%", speed),
+        .when(motion, |col| {
+            col.child(slider_step(
                 Track::RearSpeed,
                 speed / 100.0,
                 Fill::Solid(PAPER),
+                "rear-spd-dec",
+                "rear-spd-inc",
+                cx.listener(move |this, _, _, cx| {
+                    this.service.update(cx, |service, cx| {
+                        service.set_speed(speed - 5.0);
+                        service.flush_now();
+                        cx.notify();
+                    });
+                }),
+                cx.listener(move |this, _, _, cx| {
+                    this.service.update(cx, |service, cx| {
+                        service.set_speed(speed + 5.0);
+                        service.flush_now();
+                        cx.notify();
+                    });
+                }),
                 cx,
-            )))
+            ))
         })
-        .child(effects(this, look, cx))
+        .when(!motion, |col| {
+            col.child(presets(look, cx)).child(custom_color(solid, cx))
+        })
+        .when(motion, |col| {
+            col.child(groups(this, cx)).child(effects(this, look, cx))
+        })
+        .child(
+            div()
+                .flex_none()
+                .flex()
+                .w_full()
+                .items_center()
+                .pt_4()
+                .child(power_switch(
+                    "power-rear",
+                    on,
+                    cx.listener(|this, _, _, cx| {
+                        this.service.update(cx, |service, cx| {
+                            service.toggle_rear();
+                            cx.notify();
+                        });
+                    }),
+                )),
+        )
 }
 
-fn color_trigger(
-    look: RearLook,
-    hex: &str,
-    sat: f32,
-    val: f32,
-    hue: f32,
+fn pane_tabs(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
+    div()
+        .flex()
+        .w_full()
+        .flex_none()
+        .border_b_1()
+        .border_color(rgb(LINE))
+        .child(tabs::tab(
+            "rear-pane-solid",
+            "纯色",
+            this.rear_pane == RearPane::Solid,
+            false,
+            cx.listener(|this, _, _, cx| {
+                this.rear_pane = RearPane::Solid;
+                this.hsv_open = false;
+                let solid = this.service.read(cx).rear.solid;
+                let (h, s, _) = solid.hsv();
+                if s > 0.04 {
+                    this.sv_hue = h;
+                }
+                this.service.update(cx, |service, cx| {
+                    service.show_rear_solid();
+                    cx.notify();
+                });
+            }),
+        ))
+        .child(tabs::tab(
+            "rear-pane-motion",
+            "动效",
+            this.rear_pane == RearPane::Motion,
+            true,
+            cx.listener(|this, _, _, cx| {
+                this.rear_pane = RearPane::Motion;
+                this.hsv_open = false;
+                let effect = this.service.read(cx).rear.effect;
+                this.effect_group = effect.group();
+                this.service.update(cx, |service, cx| {
+                    service.show_rear_effect();
+                    cx.notify();
+                });
+            }),
+        ))
+}
+
+fn readout(
+    on: bool,
+    level: f32,
+    glow: u32,
+    right: String,
+    motion: bool,
     cx: &mut Context<HomeView>,
 ) -> impl IntoElement {
-    let swatch = match look {
-        RearLook::Solid(color) => color.packed(),
-        RearLook::Play(_) => PAPER,
-    };
     div()
-        .id("hsv-open")
-        .w_full()
-        .h(px(44.))
-        .px_2()
-        .border_1()
-        .border_color(rgb(LINE))
-        .bg(rgb(INK))
-        .cursor_pointer()
+        .flex_none()
         .flex()
-        .items_center()
-        .gap_3()
-        .hover(|s| s.bg(rgb(HOVER)))
-        .on_click(cx.listener(|this, _, _, cx| {
-            this.hsv_open = true;
-            cx.notify();
-        }))
+        .w_full()
+        .items_end()
+        .justify_between()
+        .py_4()
+        .opacity(if on { 1.0 } else { 0.32 })
+        .child(metric("亮度", format!("{:.0}", level), glow, false))
         .child(
             div()
-                .size(px(28.))
-                .border_1()
-                .border_color(rgb(PAPER))
-                .bg(rgb(swatch)),
-        )
-        .child(
-            div()
+                .id("rear-color")
                 .flex()
                 .flex_col()
-                .flex_1()
-                .min_w(px(0.))
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(rgb(PAPER))
-                        .child(hex.to_string()),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(STONE))
-                        .child(format!("H {:.0}°  S {:.0}%  V {:.0}%", hue, sat * 100.0, val * 100.0)),
-                ),
+                .items_end()
+                .when(!motion, |d| {
+                    d.cursor_pointer().on_click(cx.listener(|this, _, _, cx| {
+                        this.hsv_open = true;
+                        cx.notify();
+                    }))
+                })
+                .child(metric(
+                    if motion { "灯效" } else { "颜色" },
+                    right,
+                    glow,
+                    true,
+                )),
         )
+}
+
+fn metric(label: &'static str, value: String, color: u32, right: bool) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .when(right, |d| d.items_end())
+        .when(!right, |d| d.items_start())
         .child(
             div()
                 .text_xs()
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_color(rgb(STONE))
-                .child("SWATCH"),
+                .child(label),
+        )
+        .child(
+            div()
+                .mt_1()
+                .text_size(if right { px(36.) } else { px(96.) })
+                .font_weight(gpui::FontWeight::BOLD)
+                .line_height(if right { px(42.) } else { px(82.) })
+                .text_color(rgb(color))
+                .child(value),
+        )
+}
+
+fn slider_step(
+    track: Track,
+    t: f32,
+    fill: Fill,
+    dec_id: &'static str,
+    inc_id: &'static str,
+    on_dec: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+    on_inc: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+    cx: &mut Context<HomeView>,
+) -> impl IntoElement {
+    div()
+        .flex_none()
+        .flex()
+        .w_full()
+        .items_center()
+        .gap_3()
+        .pt_2()
+        .pb_4()
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.))
+                .child(slider::track_bar(track, t, fill, cx)),
+        )
+        .child(
+            div()
+                .flex()
+                .gap_1p5()
+                .child(step_btn(dec_id, "−", on_dec))
+                .child(step_btn(inc_id, "+", on_inc)),
         )
 }
 
 pub fn hsv_popover(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
-    let look = this.service.read(cx).rear.look;
+    let color = this.service.read(cx).rear.solid;
     let hue_t = (this.sv_hue / 360.0).clamp(0.0, 1.0);
-    let (sat, val, hex) = match look {
-        RearLook::Solid(color) => {
-            let (_, s, v) = color.hsv();
-            (s, v, format!("#{:06x}", color.packed()))
-        }
-        RearLook::Play(_) => (1.0, 1.0, "灯效".into()),
-    };
+    let (_, sat, val) = color.hsv();
+    let hex = format!("#{:06x}", color.packed());
 
     div()
         .id("hsv-veil")
@@ -200,14 +309,7 @@ pub fn hsv_popover(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElem
                         .flex()
                         .w_full()
                         .items_center()
-                        .justify_between()
-                        .child(
-                            div()
-                                .text_xs()
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .text_color(rgb(STONE))
-                                .child("SWATCH"),
-                        )
+                        .justify_end()
                         .child(
                             div()
                                 .id("hsv-done")
@@ -220,7 +322,7 @@ pub fn hsv_popover(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElem
                                 .border_color(rgb(LINE))
                                 .text_color(rgb(STONE))
                                 .hover(|s| s.bg(rgb(HOVER)).text_color(rgb(PAPER)))
-                                .child("CLOSE · ESC")
+                                .child("关闭")
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.hsv_open = false;
                                     this.end_drag(cx);
@@ -352,31 +454,27 @@ fn presets(look: RearLook, cx: &mut Context<HomeView>) -> impl IntoElement {
         RearLook::Solid(rgb) => Some(rgb),
         RearLook::Play(_) => None,
     };
+    let last = Rgb::PRESETS.len().saturating_sub(1);
     div()
+        .id("rear-presets")
+        .flex_none()
         .flex()
         .w_full()
-        .items_center()
-        .justify_between()
-        .children(Rgb::PRESETS.into_iter().map(|(name, color)| {
+        .border_t_1()
+        .border_color(rgb(LINE))
+        .children(Rgb::PRESETS.into_iter().enumerate().map(|(i, (name, color))| {
             let active = current == Some(color);
             div()
                 .id(name)
-                .size(px(28.))
+                .flex_1()
+                .h(px(48.))
                 .cursor_pointer()
-                .border_1()
-                .border_color(if active { rgb(PAPER) } else { rgb(LINE) })
+                .flex()
+                .justify_center()
+                .items_center()
+                .when(i != last, |d| d.border_r_1().border_color(rgb(LINE)))
                 .bg(rgb(color.packed()))
-                .shadow(if active {
-                    vec![gpui::BoxShadow {
-                        color: gpui::hsla(0., 0., 1., 0.18),
-                        offset: gpui::point(px(0.), px(0.)),
-                        blur_radius: px(8.),
-                        spread_radius: px(0.),
-                        inset: false,
-                    }]
-                } else {
-                    Vec::new()
-                })
+                .when(active, |d| d.border_1().border_color(rgb(PAPER)))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     let (h, s, _) = color.hsv();
                     if s > 0.04 {
@@ -391,6 +489,90 @@ fn presets(look: RearLook, cx: &mut Context<HomeView>) -> impl IntoElement {
         }))
 }
 
+fn custom_color(solid: Rgb, cx: &mut Context<HomeView>) -> impl IntoElement {
+    let swatch = solid.packed();
+    let custom = Rgb::PRESETS.iter().all(|(_, c)| *c != solid);
+    div()
+        .id("rear-custom")
+        .flex_none()
+        .flex()
+        .w_full()
+        .h(px(48.))
+        .items_center()
+        .justify_center()
+        .gap_3()
+        .border_t_1()
+        .border_color(rgb(LINE))
+        .cursor_pointer()
+        .when(custom, |d| d.bg(rgb(PAPER)))
+        .hover(|s| {
+            if custom {
+                s
+            } else {
+                s.bg(rgb(HOVER))
+            }
+        })
+        .on_click(cx.listener(|this, _, _, cx| {
+            this.hsv_open = true;
+            cx.notify();
+        }))
+        .child(
+            div()
+                .size(px(18.))
+                .border_1()
+                .border_color(rgb(if custom { INK } else { LINE }))
+                .bg(rgb(swatch)),
+        )
+        .child(
+            div()
+                .text_xs()
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(rgb(if custom { INK } else { STONE }))
+                .child("自定义"),
+        )
+}
+
+fn groups(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
+    let group = this.effect_group;
+    let last = EffectGroup::ALL.len().saturating_sub(1);
+    div()
+        .id("rear-groups")
+        .flex_none()
+        .flex()
+        .w_full()
+        .border_t_1()
+        .border_b_1()
+        .border_color(rgb(LINE))
+        .children(EffectGroup::ALL.into_iter().enumerate().map(|(i, g)| {
+            let active = group == g;
+            div()
+                .id(g.name())
+                .flex_1()
+                .h(px(48.))
+                .cursor_pointer()
+                .flex()
+                .justify_center()
+                .items_center()
+                .when(i != last, |d| d.border_r_1().border_color(rgb(LINE)))
+                .when(active, |d| d.bg(rgb(PAPER)))
+                .hover(|s| {
+                    if active {
+                        s
+                    } else {
+                        s.bg(rgb(HOVER))
+                    }
+                })
+                .text_xs()
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(if active { rgb(INK) } else { rgb(STONE) })
+                .child(g.name())
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.effect_group = g;
+                    cx.notify();
+                }))
+        }))
+}
+
 fn effects(this: &HomeView, look: RearLook, cx: &mut Context<HomeView>) -> impl IntoElement {
     let current = match look {
         RearLook::Play(effect) => Some(effect),
@@ -398,86 +580,47 @@ fn effects(this: &HomeView, look: RearLook, cx: &mut Context<HomeView>) -> impl 
     };
     let group = this.effect_group;
     div()
+        .id("fx-list")
         .flex_1()
         .min_h(px(0.))
+        .overflow_y_scroll()
         .flex()
         .flex_col()
-        .gap_2()
-        .child(
-            div()
-                .flex()
-                .w_full()
-                .border_1()
-                .border_color(rgb(LINE))
-                .children(EffectGroup::ALL.into_iter().enumerate().map(|(i, g)| {
-                    let active = group == g;
-                    let last = i + 1 == EffectGroup::ALL.len();
+        .children(
+            Effect::ALL
+                .into_iter()
+                .filter(|e| e.group() == group)
+                .map(|effect| {
+                    let active = current == Some(effect);
                     div()
-                        .id(g.name())
-                        .flex_1()
-                        .h(px(32.))
-                        .px_1()
+                        .id(gpui::SharedString::from(format!("fx-{:02x}", effect.byte())))
+                        .w_full()
+                        .h(px(48.))
                         .cursor_pointer()
                         .flex()
                         .justify_center()
                         .items_center()
-                        .when(!last, |d| d.border_r_1().border_color(rgb(LINE)))
+                        .border_b_1()
+                        .border_color(rgb(LINE))
                         .when(active, |d| d.bg(rgb(PAPER)))
+                        .hover(|s| {
+                            if active {
+                                s
+                            } else {
+                                s.bg(rgb(HOVER))
+                            }
+                        })
                         .text_xs()
                         .font_weight(gpui::FontWeight::SEMIBOLD)
                         .text_color(if active { rgb(INK) } else { rgb(STONE) })
-                        .child(g.name())
+                        .child(effect.name())
                         .on_click(cx.listener(move |this, _, _, cx| {
-                            this.effect_group = g;
-                            cx.notify();
+                            this.effect_group = effect.group();
+                            this.service.update(cx, |service, cx| {
+                                service.set_effect(effect);
+                                cx.notify();
+                            });
                         }))
-                })),
-        )
-        .child(
-            div()
-                .id("fx-list")
-                .flex_1()
-                .min_h(px(0.))
-                .overflow_y_scroll()
-                .flex()
-                .flex_col()
-                .children(
-                    Effect::ALL
-                        .into_iter()
-                        .filter(|e| e.group() == group)
-                        .map(|effect| {
-                            let active = current == Some(effect);
-                            div()
-                                .id(gpui::SharedString::from(format!("fx-{:02x}", effect.byte())))
-                                .w_full()
-                                .h(px(40.))
-                                .px_0()
-                                .cursor_pointer()
-                                .flex()
-                                .items_center()
-                                .border_t_1()
-                                .border_color(rgb(LINE))
-                                .when(active, |d| d.bg(rgb(PAPER)))
-                                .hover(|s| {
-                                    if active {
-                                        s
-                                    } else {
-                                        s.bg(rgb(HOVER))
-                                    }
-                                })
-                                .text_sm()
-                                .text_color(if active { rgb(INK) } else { rgb(PAPER) })
-                                .child(
-                                    div().px_3().child(effect.name()),
-                                )
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.effect_group = effect.group();
-                                    this.service.update(cx, |service, cx| {
-                                        service.set_effect(effect);
-                                        cx.notify();
-                                    });
-                                }))
-                        }),
-                ),
+                }),
         )
 }

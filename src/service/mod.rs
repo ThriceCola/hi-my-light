@@ -33,6 +33,7 @@ pub struct LampService {
     pub close_preference: ClosePreference,
     restore_after_shutdown: bool,
     shutting_down: bool,
+    pub quitting: bool,
     shutdown_quit_at: Option<Instant>,
     pub autostart: bool,
     pub off_on_shutdown: bool,
@@ -119,6 +120,7 @@ impl LampService {
             close_preference: session.close_preference,
             restore_after_shutdown: session.restore_after_shutdown,
             shutting_down: false,
+            quitting: false,
             shutdown_quit_at: None,
             autostart,
             off_on_shutdown: session.off_on_shutdown,
@@ -128,13 +130,52 @@ impl LampService {
     }
 
     fn poll_interval(&self) -> Duration {
-        if self.shutting_down {
+        if self.shutting_down || self.quitting {
             Duration::from_millis(40)
         } else if self.parked {
             Duration::from_millis(750)
         } else {
             Duration::from_millis(40)
         }
+    }
+
+    pub fn begin_user_quit(&mut self, cx: &mut Context<Self>) {
+        if self.quitting || self.shutting_down {
+            return;
+        }
+        self.quitting = true;
+        self.parked = true;
+        self.connecting = false;
+        self.retry_at = None;
+        self.pending = Pending::default();
+        self.status = "正在断开蓝牙".into();
+        self.persist();
+        let addr = self
+            .connected_addr
+            .clone()
+            .or_else(|| self.remembered_addr.clone());
+        self.send(BleCmd::Disconnect);
+        self.shutdown_quit_at = Some(Instant::now() + Duration::from_millis(if addr.is_some() {
+            2200
+        } else {
+            80
+        }));
+        if let Some(addr) = addr {
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .spawn(async move {
+                        hi_my_light::release_device_blocking(&addr);
+                    })
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    this.persist();
+                    cx.quit();
+                });
+            })
+            .detach();
+        }
+        cx.notify();
+        cx.emit(ServiceEvent::Changed);
     }
 
     fn begin_os_shutdown(&mut self) {
@@ -175,7 +216,7 @@ impl LampService {
     }
 
     pub fn wake(&mut self) {
-        if !self.parked {
+        if !self.parked || self.quitting || self.shutting_down {
             return;
         }
         self.parked = false;
@@ -277,7 +318,12 @@ impl LampService {
         let Some(addr) = self.remembered_addr.clone() else {
             return false;
         };
-        if self.parked || self.shutting_down || self.connected() || !self.connecting {
+        if self.parked
+            || self.shutting_down
+            || self.quitting
+            || self.connected()
+            || !self.connecting
+        {
             return false;
         }
         self.status = "重连中…".into();
@@ -288,6 +334,7 @@ impl LampService {
     fn schedule_retry(&mut self) {
         if !self.parked
             && !self.shutting_down
+            && !self.quitting
             && self.connecting
             && self.remembered_addr.is_some()
             && !self.connected()
@@ -408,6 +455,19 @@ impl LampService {
         self.persist();
     }
 
+    pub fn show_rear_solid(&mut self) {
+        self.rear.show_solid();
+        self.apply_rear();
+        self.persist();
+    }
+
+    pub fn show_rear_effect(&mut self) {
+        self.rear.show_effect();
+        self.status = self.rear.effect.name().into();
+        self.apply_rear();
+        self.persist();
+    }
+
     fn apply_front(&mut self) {
         for frame in self.front.wake_frames() {
             self.write(frame);
@@ -430,7 +490,7 @@ impl LampService {
     }
 
     fn write(&mut self, frame: Frame) {
-        if self.shutting_down || !self.connected() {
+        if self.shutting_down || self.quitting || !self.connected() {
             return;
         }
         self.last_frame = frame.hex().into();
@@ -446,7 +506,10 @@ impl LampService {
                 BleMsg::Ready => {
                     self.ready = true;
                     if let Some(addr) = self.remembered_addr.clone() {
-                        if !self.connected() && (!self.parked || self.restore_after_shutdown) {
+                        if !self.connected()
+                            && !self.quitting
+                            && (!self.parked || self.restore_after_shutdown)
+                        {
                             self.connecting = true;
                             self.status = "正在连接…".into();
                             self.send(BleCmd::Reconnect(addr));
@@ -489,7 +552,7 @@ impl LampService {
                         self.rear.sync_lit();
                         self.persist();
                     }
-                    if self.parked || self.shutting_down {
+                    if self.parked || self.shutting_down || self.quitting {
                         if !restoring {
                             self.send(BleCmd::Disconnect);
                         }

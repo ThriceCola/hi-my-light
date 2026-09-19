@@ -51,7 +51,10 @@ pub struct RearSnap {
     pub level: u8,
     #[serde(default = "default_rgb")]
     pub rgb: [u8; 3],
+    #[serde(default)]
     pub effect: Option<u8>,
+    #[serde(default)]
+    pub playing: Option<bool>,
     #[serde(default = "default_speed")]
     pub speed: u8,
 }
@@ -93,6 +96,7 @@ impl Default for RearSnap {
             level: default_level(),
             rgb: default_rgb(),
             effect: None,
+            playing: None,
             speed: default_speed(),
         }
     }
@@ -171,20 +175,25 @@ impl Session {
     }
 
     pub fn rear_lamp(&self) -> Rear {
-        let look = self
+        let solid = Rgb::new(self.rear.rgb[0], self.rear.rgb[1], self.rear.rgb[2]);
+        let effect = self
             .rear
             .effect
             .and_then(effect_from_byte)
-            .map(RearLook::Play)
-            .unwrap_or_else(|| {
-                RearLook::Solid(Rgb::new(self.rear.rgb[0], self.rear.rgb[1], self.rear.rgb[2]))
-            });
+            .unwrap_or(Effect::RainbowFwd);
+        let playing = self.rear.playing.unwrap_or(self.rear.effect.is_some());
+        let look = if playing {
+            RearLook::Play(effect)
+        } else {
+            RearLook::Solid(solid)
+        };
         Rear::new(
             self.rear.on,
             Level::from_byte(self.rear.level),
             look,
             Level::from_byte(self.rear.speed),
         )
+        .with_memory(solid, effect)
     }
 }
 
@@ -200,18 +209,12 @@ impl FrontSnap {
 
 impl RearSnap {
     pub fn from_lamp(rear: &Rear) -> Self {
-        let (rgb, effect) = match rear.look {
-            RearLook::Solid(rgb) => ([rgb.r, rgb.g, rgb.b], None),
-            RearLook::Play(effect) => {
-                let rgb = rear.rgb();
-                ([rgb.r, rgb.g, rgb.b], Some(effect.byte()))
-            }
-        };
         Self {
             on: rear.on,
             level: rear.level.byte(),
-            rgb,
-            effect,
+            rgb: [rear.solid.r, rear.solid.g, rear.solid.b],
+            effect: Some(rear.effect.byte()),
+            playing: Some(matches!(rear.look, RearLook::Play(_))),
             speed: rear.speed.byte(),
         }
     }
@@ -219,4 +222,69 @@ impl RearSnap {
 
 fn effect_from_byte(byte: u8) -> Option<Effect> {
     Effect::ALL.into_iter().find(|effect| effect.byte() == byte)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lamp::RearLook;
+
+    #[test]
+    fn solid_keeps_last_effect() {
+        let mut rear = Rear::new(
+            true,
+            Level::from_byte(40),
+            RearLook::Play(Effect::RgbJump),
+            Level::from_byte(0x5a),
+        )
+        .with_memory(Rgb::new(0x11, 0x22, 0x33), Effect::RgbJump);
+        rear.set_rgb(Rgb::new(0xAA, 0xBB, 0xCC));
+        let snap = RearSnap::from_lamp(&rear);
+        assert_eq!(snap.rgb, [0xAA, 0xBB, 0xCC]);
+        assert_eq!(snap.effect, Some(Effect::RgbJump.byte()));
+        assert_eq!(snap.playing, Some(false));
+        let restored = Session {
+            rear: snap,
+            ..Session::default()
+        }
+        .rear_lamp();
+        assert_eq!(restored.look, RearLook::Solid(Rgb::new(0xAA, 0xBB, 0xCC)));
+        assert_eq!(restored.effect, Effect::RgbJump);
+        assert_eq!(restored.solid, Rgb::new(0xAA, 0xBB, 0xCC));
+    }
+
+    #[test]
+    fn effect_keeps_last_solid() {
+        let mut rear = Rear::new(
+            true,
+            Level::from_byte(40),
+            RearLook::Solid(Rgb::new(0x11, 0x22, 0x33)),
+            Level::from_byte(0x5a),
+        );
+        rear.set_effect(Effect::BlueHorse);
+        let snap = RearSnap::from_lamp(&rear);
+        assert_eq!(snap.rgb, [0x11, 0x22, 0x33]);
+        assert_eq!(snap.effect, Some(Effect::BlueHorse.byte()));
+        assert_eq!(snap.playing, Some(true));
+        let restored = Session {
+            rear: snap,
+            ..Session::default()
+        }
+        .rear_lamp();
+        assert_eq!(restored.look, RearLook::Play(Effect::BlueHorse));
+        assert_eq!(restored.solid, Rgb::new(0x11, 0x22, 0x33));
+    }
+
+    #[test]
+    fn legacy_effect_without_playing_is_motion() {
+        let json = r#"{"on":true,"level":48,"rgb":[1,2,3],"effect":193,"speed":90}"#;
+        let snap: RearSnap = serde_json::from_str(json).unwrap();
+        let restored = Session {
+            rear: snap,
+            ..Session::default()
+        }
+        .rear_lamp();
+        assert_eq!(restored.look, RearLook::Play(Effect::RainbowJump));
+        assert_eq!(restored.solid, Rgb::new(1, 2, 3));
+    }
 }

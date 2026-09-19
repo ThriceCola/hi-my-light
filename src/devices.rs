@@ -6,7 +6,7 @@ use gpui::{
 
 use crate::bridge::DeviceRow;
 use crate::service::LampService;
-use crate::theme::{HOVER, INK, LINE, PAPER, STONE, chip_btn, status_pill};
+use crate::theme::{HOVER, INK, LINE, PAPER, STONE, chip_btn};
 
 const ROW_H: f32 = 76.0;
 
@@ -128,32 +128,11 @@ impl DevicesView {
             .border_color(rgb(LINE))
             .child(
                 div()
-                    .flex()
-                    .w_full()
-                    .items_end()
-                    .justify_between()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(rgb(STONE))
-                                    .child("MANUAL 01"),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(42.))
-                                    .font_weight(FontWeight::BOLD)
-                                    .line_height(px(44.))
-                                    .text_color(rgb(PAPER))
-                                    .child("Device"),
-                            ),
-                    )
-                    .child(status_pill(connected, scanning)),
+                    .text_size(px(32.))
+                    .font_weight(FontWeight::BOLD)
+                    .line_height(px(36.))
+                    .text_color(rgb(PAPER))
+                    .child("设备"),
             )
             .child(
                 div()
@@ -161,7 +140,7 @@ impl DevicesView {
                     .gap_2()
                     .child(chip_btn(
                         "scan",
-                        if scanning { "SCAN…" } else { "SCAN" },
+                        if scanning { "扫描中" } else { "扫描" },
                         !ready || scanning,
                         cx.listener(|this, _, _, cx| {
                             this.service.update(cx, |service, cx| {
@@ -173,7 +152,7 @@ impl DevicesView {
                     .when(connected, |row| {
                         row.child(chip_btn(
                             "disc",
-                            "DISCONNECT",
+                            "断开",
                             false,
                             cx.listener(|this, _, _, cx| {
                                 this.service.update(cx, |service, cx| {
@@ -256,7 +235,7 @@ fn device_row(
                                             .text_color(rgb(PAPER))
                                             .text_xs()
                                             .font_weight(FontWeight::SEMIBOLD)
-                                            .child("PRIMARY"),
+                                            .child("首选"),
                                     )
                                 }),
                         )
@@ -276,7 +255,7 @@ fn device_row(
                             rgb(STONE)
                         })
                         .child(if selected {
-                            "CONNECTED".to_string()
+                            "已连接".to_string()
                         } else {
                             rssi
                         }),

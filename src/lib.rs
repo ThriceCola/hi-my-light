@@ -14,4 +14,4 @@ pub use protocol::{
     Brightness, Cct, Channel, Clock, Command, Effect, EffectGroup, Frame, Level, Power, Query, Rgb,
     Speed, Switch, WhiteMix,
 };
-pub use shutdown_off::shutdown_turn_off;
+pub use shutdown_off::{release_device, release_device_blocking, shutdown_turn_off};

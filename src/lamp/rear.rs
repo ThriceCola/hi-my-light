@@ -12,18 +12,32 @@ pub struct Rear {
     pub level: Level,
     pub look: RearLook,
     pub speed: Level,
+    pub solid: Rgb,
+    pub effect: Effect,
     lit: bool,
 }
 
 impl Rear {
     pub fn new(on: bool, level: Level, look: RearLook, speed: Level) -> Self {
+        let (solid, effect) = match look {
+            RearLook::Solid(color) => (color, Effect::RainbowFwd),
+            RearLook::Play(effect) => (Rgb::new(0xE0, 0xA8, 0x5C), effect),
+        };
         Self {
             on,
             level,
             look,
             speed,
+            solid,
+            effect,
             lit: false,
         }
+    }
+
+    pub fn with_memory(mut self, solid: Rgb, effect: Effect) -> Self {
+        self.solid = solid;
+        self.effect = effect;
+        self
     }
 
     pub fn extinguish(&mut self) {
@@ -40,13 +54,23 @@ impl Rear {
     }
 
     pub fn set_rgb(&mut self, rgb: Rgb) {
+        self.solid = rgb;
         self.look = RearLook::Solid(rgb);
         self.on = true;
     }
 
     pub fn set_effect(&mut self, effect: Effect) {
+        self.effect = effect;
         self.look = RearLook::Play(effect);
         self.on = true;
+    }
+
+    pub fn show_solid(&mut self) {
+        self.look = RearLook::Solid(self.solid);
+    }
+
+    pub fn show_effect(&mut self) {
+        self.look = RearLook::Play(self.effect);
     }
 
     pub fn toggle(&mut self) {
@@ -66,13 +90,6 @@ impl Rear {
         }
         self.lit = true;
         Some(self.power_frame())
-    }
-
-    pub fn rgb(&self) -> Rgb {
-        match self.look {
-            RearLook::Solid(rgb) => rgb,
-            RearLook::Play(_) => Rgb::WHITE,
-        }
     }
 
     pub fn power_frame(&self) -> Frame {

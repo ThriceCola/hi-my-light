@@ -91,6 +91,28 @@ fn show_page(cx: &mut App, page: Page) {
     cx.global_mut::<Workspace>().window = Some(handle);
 }
 
+pub fn request_quit(cx: &mut App) {
+    let Some(service) = cx.try_global::<Workspace>().map(|ws| ws.service.clone()) else {
+        cx.quit();
+        return;
+    };
+    if service.read(cx).quitting {
+        return;
+    }
+    service.update(cx, |service, cx| {
+        service.begin_user_quit(cx);
+    });
+    if cx
+        .try_global::<Workspace>()
+        .and_then(|ws| ws.window.clone())
+        .is_none()
+    {
+        let page = initial_page(&service.read(cx));
+        let handle = open_shell(cx, service, page);
+        cx.global_mut::<Workspace>().window = Some(handle);
+    }
+}
+
 pub fn park_to_background(cx: &mut App) {
     if let Some(service) = cx.try_global::<Workspace>().map(|ws| ws.service.clone()) {
         service.update(cx, |service, cx| {
@@ -107,12 +129,7 @@ pub fn apply_close_choice(cx: &mut App, window: &mut Window, preference: ClosePr
             park_to_background(cx);
             window.remove_window();
         }
-        ClosePreference::Quit => {
-            if let Some(service) = cx.try_global::<Workspace>().map(|ws| ws.service.clone()) {
-                service.read(cx).persist();
-            }
-            cx.quit();
-        }
+        ClosePreference::Quit => request_quit(cx),
     }
 }
 
@@ -127,7 +144,7 @@ pub fn forget_window(cx: &mut App, id: WindowId) {
     if gone {
         if let Some(service) = cx.try_global::<Workspace>().map(|ws| ws.service.clone()) {
             service.update(cx, |service, cx| {
-                if !service.parked {
+                if !service.parked && !service.quitting {
                     service.park();
                     cx.notify();
                 }

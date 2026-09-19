@@ -1,6 +1,5 @@
 mod brightness;
 mod cct;
-mod header;
 mod kelvin;
 mod scenes;
 
@@ -18,7 +17,6 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
         .flex()
         .flex_col()
         .w_full()
-        .child(header::render(this, cx))
         .child(kelvin::render(this, cx))
         .child(cct::render(this, cx))
         .child(brightness::render(this, cx))

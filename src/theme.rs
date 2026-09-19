@@ -1,7 +1,8 @@
+use gpui::prelude::*;
 use gpui::{
     App, Bounds, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, PathBuilder,
-    Pixels, Point, SharedString, Size, StatefulInteractiveElement, Styled, Window, div, point,
-    prelude::*, px, rgb, size,
+    Pixels, Point, SharedString, Size, StatefulInteractiveElement, Styled, Window, div, point, px,
+    rgb, size,
 };
 
 pub const INK: u32 = 0x050506;
@@ -37,10 +38,9 @@ pub fn display_aspect(cx: &App) -> f32 {
     }
 }
 
-pub const FRAME_SHADOW: f32 = 18.0;
 pub const TITLEBAR_H: f32 = 36.0;
 
-/// 横向窗口。高度含标题栏和客户区阴影，按内容估算，避免开局裁掉底部。
+/// 横向窗口。高度含标题栏，按内容估算，避免开局裁掉底部。
 pub fn home_window_size(cx: &App) -> Size<Pixels> {
     let work = cx
         .primary_display()
@@ -48,11 +48,10 @@ pub fn home_window_size(cx: &App) -> Size<Pixels> {
         .map(|display| display.bounds().size)
         .unwrap_or_else(|| size(px(1920.), px(1080.)));
 
-    let frame = px(FRAME_SHADOW * 2.0);
     let content_w = px(880.);
-    let content_h = px(TITLEBAR_H) + px(680.);
-    let width = (content_w + frame).min(work.width * 0.92);
-    let height = (content_h + frame).min(work.height * 0.90);
+    let content_h = px(TITLEBAR_H) + px(645.);
+    let width = content_w.min(work.width * 0.92);
+    let height = content_h.min(work.height * 0.90);
     size(width.max(px(760.)), height.max(px(640.)))
 }
 
@@ -73,14 +72,6 @@ pub fn lerp_rgb(a: u32, b: u32, t: f32) -> u32 {
     (mix(16) << 16) | (mix(8) << 8) | mix(0)
 }
 
-pub fn meta(text: impl Into<SharedString>) -> impl IntoElement {
-    div()
-        .text_xs()
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(rgb(STONE))
-        .child(text.into())
-}
-
 pub fn ghost_btn(
     id: impl Into<gpui::ElementId>,
     label: impl Into<SharedString>,
@@ -98,11 +89,7 @@ pub fn ghost_btn(
         .font_weight(FontWeight::SEMIBOLD)
         .border_1()
         .border_color(rgb(LINE))
-        .text_color(if disabled {
-            rgb(0x52525B)
-        } else {
-            rgb(PAPER)
-        })
+        .text_color(if disabled { rgb(0x52525B) } else { rgb(PAPER) })
         .when(!disabled, |d| {
             d.cursor_pointer()
                 .hover(|s| s.bg(rgb(HOVER)))
@@ -163,32 +150,27 @@ pub fn check_box(checked: bool) -> impl IntoElement {
 
 pub fn status_pill(connected: bool, scanning: bool) -> impl IntoElement {
     let (label, color) = if connected {
-        ("CONNECTED", AMBER)
+        ("已连接", AMBER)
     } else if scanning {
-        ("SCANNING", 0xC8D4E8)
+        ("扫描中", 0xC8D4E8)
     } else {
-        ("OFFLINE", BAD)
+        ("未连接", BAD)
     };
     div()
         .flex()
         .gap_2()
         .items_center()
-        .child(
-            div()
-                .size(px(6.))
-                .bg(rgb(color))
-                .shadow(if connected {
-                    vec![gpui::BoxShadow {
-                        color: tone(color, 0.85),
-                        blur_radius: px(8.),
-                        spread_radius: px(0.),
-                        inset: false,
-                        offset: point(px(0.), px(0.)),
-                    }]
-                } else {
-                    Vec::new()
-                }),
-        )
+        .child(div().size(px(6.)).bg(rgb(color)).shadow(if connected {
+            vec![gpui::BoxShadow {
+                color: tone(color, 0.85),
+                blur_radius: px(8.),
+                spread_radius: px(0.),
+                inset: false,
+                offset: point(px(0.), px(0.)),
+            }]
+        } else {
+            Vec::new()
+        }))
         .child(
             div()
                 .text_xs()
@@ -232,7 +214,7 @@ pub fn power_switch(
                 .text_xs()
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(if on { rgb(PAPER) } else { rgb(STONE) })
-                .child(if on { "ON" } else { "OFF" }),
+                .child(if on { "开" } else { "关" }),
         )
 }
 

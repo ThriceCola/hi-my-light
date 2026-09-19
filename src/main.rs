@@ -104,14 +104,18 @@ fn main() {
             KeyBinding::new("ctrl-1", ShowHome, None),
             KeyBinding::new("ctrl-comma", OpenSettings, None),
         ]);
-        cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
+        cx.on_action(|_: &Quit, cx: &mut App| workspace::request_quit(cx));
         cx.on_action(|_: &OpenDevices, cx: &mut App| workspace::show_devices(cx));
         cx.on_action(|_: &ShowHome, cx: &mut App| workspace::show_home(cx));
         cx.on_action(|_: &OpenSettings, cx: &mut App| workspace::show_settings(cx));
 
         cx.on_app_quit(|cx| {
             if let Some(ws) = cx.try_global::<Workspace>() {
-                ws.service.read(cx).persist();
+                let service = ws.service.read(cx);
+                service.persist();
+                if !service.quitting {
+                    service.send(bridge::BleCmd::Disconnect);
+                }
             }
             async {}
         })

@@ -22,10 +22,14 @@ impl DeviceRow {
         self.name.to_ascii_uppercase().contains(PREFERRED_DEVICE)
     }
 
-    pub fn sort_key(&self) -> (u8, i16, String) {
+    pub fn sort_key(&self) -> (u8, i32, String) {
         let rank = if self.is_preferred() { 0 } else { 1 };
-        let rssi = self.rssi.unwrap_or(i16::MIN);
-        (rank, -rssi, self.name.to_ascii_lowercase())
+        // 没有 RSSI 的排最后。不能用 -i16::MIN，debug 会溢出把 BLE 线程打崩。
+        let rssi_ord = match self.rssi {
+            Some(rssi) => i32::from(rssi).saturating_neg(),
+            None => i32::MAX,
+        };
+        (rank, rssi_ord, self.name.to_ascii_lowercase())
     }
 }
 
@@ -234,6 +238,7 @@ async fn shutdown_off(manager: &hi_my_light::BleManager, uuid: &Uuid, addr: Opti
     let _ = manager
         .write(uuid, Power::off(Channel::Rear).frame().as_ref(), false)
         .await;
+    let _ = manager.disconnect().await;
 }
 
 async fn connect_quiet(manager: &hi_my_light::BleManager, char_uuid: &Uuid, addr: &str) -> bool {
@@ -264,5 +269,33 @@ async fn write_frame(
         Err(e) => {
             let _ = msg_tx.send(BleMsg::Error(e.to_string()));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(name: &str, rssi: Option<i16>) -> DeviceRow {
+        DeviceRow {
+            name: name.into(),
+            addr: name.into(),
+            rssi,
+        }
+    }
+
+    #[test]
+    fn missing_or_min_rssi_does_not_overflow() {
+        let mut devices = [
+            row("other", None),
+            row("THUNDEROBOT L2", Some(-55)),
+            row("weak", Some(i16::MIN)),
+            row("stronger", Some(-40)),
+        ];
+        sort_devices(&mut devices);
+        assert_eq!(devices[0].name, "THUNDEROBOT L2");
+        assert_eq!(devices[1].name, "stronger");
+        assert_eq!(devices[2].name, "weak");
+        assert_eq!(devices[3].name, "other");
     }
 }

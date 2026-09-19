@@ -60,7 +60,7 @@ fn poll(cx: &mut App) {
         match cmd {
             TrayCmd::ShowHome => workspace::activate_home(cx),
             TrayCmd::Devices => workspace::open_devices(cx),
-            TrayCmd::Quit => cx.quit(),
+            TrayCmd::Quit => workspace::request_quit(cx),
         }
     }
 }

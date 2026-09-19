@@ -145,10 +145,24 @@ impl BleManager {
     /// 如果已连接到其他设备，则返回错误。
     /// 连接成功后，管理器会自动执行服务发现。
     pub async fn connect(&self, address: &btleplug::api::BDAddr) -> Result<DeviceInfo, BleError> {
-        // 保护：每次只允许一个连接。
         {
             let guard = self.connected.lock().await;
-            if guard.is_some() {
+            if let Some(p) = guard.as_ref() {
+                if p.address() == *address {
+                    let info = match p.properties().await {
+                        Ok(Some(props)) => DeviceInfo {
+                            address: props.address,
+                            name: props.local_name,
+                            rssi: props.rssi,
+                        },
+                        _ => DeviceInfo {
+                            address: *address,
+                            name: None,
+                            rssi: None,
+                        },
+                    };
+                    return Ok(info);
+                }
                 return Err(BleError::AlreadyConnected);
             }
         }
@@ -178,11 +192,17 @@ impl BleManager {
         let (peripheral, info) =
             target.ok_or_else(|| BleError::PeripheralNotFound(address.to_string()))?;
 
-        // 连接并发现服务。
-        peripheral
-            .connect()
-            .await
-            .map_err(|e| BleError::ConnectFailed(e.to_string()))?;
+        // 本进程里可能已经连着（关灯/退出时另开了一个 Manager）。
+        // BlueZ 对“已连接再 connect”会报错，不能当成失败放弃。
+        match peripheral.connect().await {
+            Ok(()) => {}
+            Err(e) => {
+                let already = peripheral.is_connected().await.unwrap_or(false);
+                if !already {
+                    return Err(BleError::ConnectFailed(e.to_string()));
+                }
+            }
+        }
 
         peripheral
             .discover_services()
@@ -201,13 +221,45 @@ impl BleManager {
     /// 如果未连接，则不执行任何操作。
     pub async fn disconnect(&self) -> Result<(), BleError> {
         let mut guard = self.connected.lock().await;
-        if let Some(p) = guard.take() {
-            p.disconnect()
-                .await
-                .map_err(|e| BleError::DisconnectFailed(e.to_string()))?;
-            let _ = self.event_tx.send(BleEvent::Disconnected);
+        let Some(p) = guard.take() else {
+            return Ok(());
+        };
+        let addr = p.address();
+        drop(guard);
+        let first = p.disconnect().await;
+        let _ = self.event_tx.send(BleEvent::Disconnected);
+        self.disconnect_adapter(&addr).await;
+        first.map_err(|e| BleError::DisconnectFailed(e.to_string()))
+    }
+
+    /// 按地址断开，包括本 Manager 没记着、但适配器上仍占着的连接。
+    pub async fn disconnect_address(&self, address: &btleplug::api::BDAddr) -> Result<(), BleError> {
+        {
+            let mut guard = self.connected.lock().await;
+            let matches = guard.as_ref().is_some_and(|p| p.address() == *address);
+            if matches {
+                if let Some(p) = guard.take() {
+                    let _ = p.disconnect().await;
+                    let _ = self.event_tx.send(BleEvent::Disconnected);
+                }
+            }
         }
+        self.disconnect_adapter(address).await;
         Ok(())
+    }
+
+    async fn disconnect_adapter(&self, address: &btleplug::api::BDAddr) {
+        let Ok(peripherals) = self.adapter.peripherals().await else {
+            return;
+        };
+        for p in peripherals {
+            if p.address() != *address {
+                continue;
+            }
+            if p.is_connected().await.unwrap_or(false) {
+                let _ = p.disconnect().await;
+            }
+        }
     }
 
     /// 检查当前是否已连接到设备。

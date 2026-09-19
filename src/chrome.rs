@@ -6,12 +6,12 @@ use gpui::{
     InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, ResizeEdge, Size,
     StatefulInteractiveElement, Styled, Window, WindowBackgroundAppearance, WindowBounds,
     WindowControls, WindowDecorations, WindowOptions, canvas, div, point, px, rgb, size,
-    transparent_black,
 };
 
-use crate::theme::{FRAME_SHADOW, HOVER, INK, LINE, PAPER, STONE, home_window_size, paint_spinner_ring, tone};
+use crate::theme::{HOVER, INK, LINE, PAPER, STONE, home_window_size, paint_spinner_ring, tone};
 
 const ROUND: f32 = 2.0;
+const RESIZE_EDGE: f32 = 6.0;
 
 pub fn window_options(cx: &gpui::App) -> WindowOptions {
     let bounds = gpui::Bounds::centered(None, home_window_size(cx), cx);
@@ -34,22 +34,19 @@ pub fn frame(
     window: &mut Window,
     title: impl IntoElement,
     body: impl IntoElement,
+    overlay: impl IntoElement,
 ) -> impl IntoElement {
     let decorations = window.window_decorations();
     let rounding = px(ROUND);
-    let shadow_size = px(FRAME_SHADOW);
-    window.set_client_inset(match decorations {
-        Decorations::Client { tiling } if !tiling.is_tiled() => shadow_size,
-        _ => px(0.),
-    });
+    let handle = px(RESIZE_EDGE);
+    window.set_client_inset(px(0.));
 
     div()
-        .id("window-backdrop")
+        .id("window-frame")
         .size_full()
-        .bg(transparent_black())
         .map(|el| match decorations {
             Decorations::Server => el,
-            Decorations::Client { tiling, .. } => el
+            Decorations::Client { .. } => el
                 .child(
                     canvas(
                         |_bounds, window, _cx| {
@@ -64,7 +61,7 @@ pub fn frame(
                         move |_bounds, hitbox, window, _cx| {
                             let mouse = window.mouse_position();
                             let size = window.window_bounds().get_bounds().size;
-                            let Some(edge) = resize_edge(mouse, shadow_size, size) else {
+                            let Some(edge) = resize_edge(mouse, handle, size) else {
                                 return;
                             };
                             window.set_cursor_style(cursor_for_edge(edge), &hitbox);
@@ -73,16 +70,10 @@ pub fn frame(
                     .size_full()
                     .absolute(),
                 )
-                .when(!(tiling.top || tiling.left), |d| d.rounded_tl(rounding))
-                .when(!(tiling.top || tiling.right), |d| d.rounded_tr(rounding))
-                .when(!tiling.top, |d| d.pt(shadow_size))
-                .when(!tiling.bottom, |d| d.pb(shadow_size))
-                .when(!tiling.left, |d| d.pl(shadow_size))
-                .when(!tiling.right, |d| d.pr(shadow_size))
                 .on_mouse_move(|_, window, _| window.refresh())
                 .on_mouse_down(MouseButton::Left, move |e, window, _| {
                     let size = window.window_bounds().get_bounds().size;
-                    if let Some(edge) = resize_edge(e.position, shadow_size, size) {
+                    if let Some(edge) = resize_edge(e.position, handle, size) {
                         window.start_window_resize(edge);
                     }
                 }),
@@ -108,21 +99,21 @@ pub fn frame(
                         .when(!tiling.top, |d| d.border_t_1())
                         .when(!tiling.bottom, |d| d.border_b_1())
                         .when(!tiling.left, |d| d.border_l_1())
-                        .when(!tiling.right, |d| d.border_r_1())
-                        .when(!tiling.is_tiled(), |d| {
-                            d.shadow(vec![gpui::BoxShadow {
-                                color: gpui::hsla(0., 0., 0., 0.45),
-                                blur_radius: shadow_size / 2.,
-                                spread_radius: px(0.),
-                                inset: false,
-                                offset: point(px(0.), px(0.)),
-                            }])
-                        }),
+                        .when(!tiling.right, |d| d.border_r_1()),
                 })
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_mouse_down(MouseButton::Left, move |e, window, cx| {
+                    let size = window.window_bounds().get_bounds().size;
+                    if let Some(edge) = resize_edge(e.position, handle, size) {
+                        window.start_window_resize(edge);
+                        return;
+                    }
+                    cx.stop_propagation();
+                })
                 .on_mouse_move(|_, _, cx| cx.stop_propagation())
+                .relative()
                 .child(title)
-                .child(body),
+                .child(body)
+                .child(overlay),
         )
 }
 
@@ -245,8 +236,16 @@ pub fn brand() -> impl IntoElement {
 }
 
 pub fn connecting_overlay() -> impl IntoElement {
+    busy_overlay("connecting-veil", "connecting-spin", "正在连接")
+}
+
+pub fn disconnecting_overlay() -> impl IntoElement {
+    busy_overlay("disconnecting-veil", "disconnecting-spin", "正在断开蓝牙")
+}
+
+fn busy_overlay(id: &'static str, spin_id: &'static str, label: &'static str) -> impl IntoElement {
     div()
-        .id("connecting-veil")
+        .id(id)
         .absolute()
         .inset_0()
         .flex()
@@ -254,9 +253,11 @@ pub fn connecting_overlay() -> impl IntoElement {
         .items_center()
         .justify_center()
         .gap_3()
-        .bg(tone(INK, 0.55))
-        .child(div().id("connecting-spin").size(px(36.)).with_animation(
-            "connecting-spin",
+        .bg(tone(INK, 0.72))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_mouse_move(|_, _, cx| cx.stop_propagation())
+        .child(div().id(spin_id).size(px(36.)).with_animation(
+            spin_id,
             Animation::new(Duration::from_millis(900)).repeat(),
             |this, delta| {
                 this.child(
@@ -270,7 +271,12 @@ pub fn connecting_overlay() -> impl IntoElement {
                 )
             },
         ))
-        .child(div().text_xs().text_color(rgb(PAPER)).child("CONNECTING"))
+        .child(
+            div()
+                .text_sm()
+                .text_color(rgb(PAPER))
+                .child(label),
+        )
 }
 
 fn resize_edge(pos: Point<Pixels>, shadow_size: Pixels, size: Size<Pixels>) -> Option<ResizeEdge> {

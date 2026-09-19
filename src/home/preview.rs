@@ -39,17 +39,9 @@ pub fn paint(bounds: Bounds<Pixels>, preview: LampPreview, window: &mut Window) 
     window.paint_quad(fill(bounds, rgb(INK)));
 
     let kelvin = glow_from_kelvin(preview.front_kelvin);
-    let front = if preview.front_on {
-        (preview.front_level / 100.0).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
+    let front = preview_gain(preview.front_on, preview.front_level);
     let aspect = preview.aspect.clamp(1.2, 2.5);
-    let rear = if preview.rear_on {
-        (preview.rear_level / 100.0).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
+    let rear = preview_gain(preview.rear_on, preview.rear_level);
     let layout = layout(bounds, aspect);
 
     paint_wall_wash(bounds, &layout, preview, rear, window);
@@ -102,6 +94,14 @@ fn layout(canvas: Bounds<Pixels>, aspect: f32) -> Layout {
     }
 }
 
+/// 协议最低一档约 1%，线性映射到预览会几乎看不见。
+fn preview_gain(on: bool, percent: f32) -> f32 {
+    if !on {
+        return 0.0;
+    }
+    0.38 + (percent / 100.0).clamp(0.0, 1.0) * 0.62
+}
+
 /// 后置光打在灯条后面的墙上：沿灯条中心左右对称向上洗开。
 fn paint_wall_wash(
     canvas: Bounds<Pixels>,
@@ -114,7 +114,7 @@ fn paint_wall_wash(
         return;
     }
 
-    let sample = |t: f32| rear_rgb(preview.rear, t, preview.phase).scale(rear);
+    let sample = |t: f32| rear_rgb(preview.rear, t, preview.phase).scale(0.55 + rear * 0.45);
     let mid = layout.bar.center().x;
     let bar_w = layout.bar.size.width;
     let bottom = layout.bar.origin.y + layout.bar.size.height * 0.45;
@@ -129,7 +129,7 @@ fn paint_wall_wash(
         let h = (rise / layers as f32) * 1.7;
         let flare = px(lt * 16.0);
         let span = bar_w + flare * 2.;
-        let alpha = (1.0 - lt).powf(1.2) * (0.08 + rear * 0.30);
+            let alpha = (1.0 - lt).powf(1.15) * (0.16 + rear * 0.28);
         let col_w = span / cols as f32;
 
         for i in 0..cols {
@@ -182,8 +182,8 @@ fn paint_monitor(layout: &Layout, kelvin: u32, front: f32, window: &mut Window) 
                 ),
                 size: size(layout.screen.size.width, (wash_h / layers as f32) * 1.8),
             };
-            let falloff = (1.0 - t).powf(2.4);
-            let alpha = front * (0.08 + front * 0.22) * falloff;
+            let falloff = (1.0 - t).powf(2.1);
+            let alpha = (0.14 + front * 0.22) * falloff;
             window.paint_quad(fill(band, tone(kelvin, alpha)));
         }
     }
@@ -199,7 +199,7 @@ fn paint_front_bar(bar: Bounds<Pixels>, kelvin: u32, front: f32, window: &mut Wi
                 bar.size.height + px(12.0 + front * 22.0),
             ),
         };
-        window.paint_quad(fill(halo, tone(kelvin, 0.10 + front * 0.16)));
+        window.paint_quad(fill(halo, tone(kelvin, 0.16 + front * 0.14)));
     }
     let left = lerp_rgb(0x3A2A1A, kelvin, 0.35);
     let right = lerp_rgb(0x2A3340, kelvin, 0.35);
@@ -216,7 +216,7 @@ fn paint_front_bar(bar: Bounds<Pixels>, kelvin: u32, front: f32, window: &mut Wi
             size: size((bar.size.width / steps as f32).max(px(1.)), bar.size.height),
         };
         let lit = if front > 0.01 {
-            lerp_rgb(0x2A2A2E, mid, 0.35 + front * 0.65)
+            lerp_rgb(0x2A2A2E, mid, 0.48 + front * 0.52)
         } else {
             0x2A2A2E
         };
@@ -480,5 +480,17 @@ fn palette(effect: Effect) -> &'static [Rgb] {
         Effect::GreenYellowFade => &GREEN_YELLOW,
         Effect::BluePurpleFade => &BLUE_PURPLE,
         _ => &SEVEN,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::preview_gain;
+
+    #[test]
+    fn lowest_on_is_still_visible() {
+        assert!(preview_gain(true, 1.0) >= 0.38);
+        assert_eq!(preview_gain(true, 100.0), 1.0);
+        assert_eq!(preview_gain(false, 100.0), 0.0);
     }
 }

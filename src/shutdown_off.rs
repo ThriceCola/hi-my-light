@@ -31,16 +31,57 @@ pub async fn shutdown_turn_off(addr: &str) -> Result<(), BleError> {
 
 async fn shutdown_turn_off_once(bd: &btleplug::api::BDAddr, uuid: &Uuid) -> Result<(), BleError> {
     let manager = BleManager::new().await?;
-    if manager.connect(bd).await.is_err() {
-        manager.scan_once(Duration::from_secs(2)).await?;
-        manager.connect(bd).await?;
+    let result = async {
+        if manager.connect(bd).await.is_err() {
+            manager.scan_once(Duration::from_secs(2)).await?;
+            manager.connect(bd).await?;
+        }
+        manager.find_characteristic(uuid).await?;
+        manager
+            .write(uuid, Power::off(Channel::Front).frame().as_ref(), false)
+            .await?;
+        manager
+            .write(uuid, Power::off(Channel::Rear).frame().as_ref(), false)
+            .await?;
+        Ok(())
     }
-    manager.find_characteristic(uuid).await?;
-    manager
-        .write(uuid, Power::off(Channel::Front).frame().as_ref(), false)
-        .await?;
-    manager
-        .write(uuid, Power::off(Channel::Rear).frame().as_ref(), false)
-        .await?;
-    Ok(())
+    .await;
+    let _ = manager.disconnect_address(bd).await;
+    result
+}
+
+/// 退出进程前把指定地址从适配器上拆掉。
+pub async fn release_device(addr: &str) -> Result<(), BleError> {
+    let bd = BDAddr::from_str(addr).map_err(|_| BleError::PeripheralNotFound(addr.into()))?;
+    let manager = BleManager::new().await?;
+    manager.disconnect_address(&bd).await
+}
+
+pub fn release_device_blocking(addr: &str) {
+    let work = async {
+        let _ = tokio::time::timeout(Duration::from_secs(2), release_device(addr)).await;
+    };
+    match tokio::runtime::Handle::try_current() {
+        Ok(_) => {
+            let _ = std::thread::scope(|scope| {
+                scope
+                    .spawn(|| {
+                        tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .ok()
+                            .map(|rt| rt.block_on(work))
+                    })
+                    .join()
+            });
+        }
+        Err(_) => {
+            if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                rt.block_on(work);
+            }
+        }
+    }
 }

@@ -3,7 +3,7 @@ use gpui::{
     Styled, Subscription, Window, div, prelude::*, px, rgb,
 };
 
-use crate::chrome::{brand, frame, titlebar, TitleDrag};
+use crate::chrome::{brand, disconnecting_overlay, frame, titlebar, TitleDrag};
 use crate::devices::DevicesView;
 use crate::home::HomeView;
 use crate::service::LampService;
@@ -127,8 +127,7 @@ fn os_should_close(_window: &mut Window, cx: &mut gpui::App) -> bool {
             true
         }
         ClosePreference::Quit => {
-            service.read(cx).persist();
-            cx.quit();
+            workspace::request_quit(cx);
             false
         }
     }
@@ -137,73 +136,80 @@ fn os_should_close(_window: &mut Window, cx: &mut gpui::App) -> bool {
 impl Render for ShellView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         window.set_window_title("HML");
-        let (connected, scanning) = {
+        let (connected, scanning, quitting) = {
             let snap = self.service.read(cx);
-            (snap.connected(), snap.scanning)
+            (snap.connected(), snap.scanning, snap.quitting)
         };
         let page = self.page;
-        let prompt = self.close_prompt;
+        let prompt = self.close_prompt && !quitting;
         let remember = self.remember_close;
 
         let controls = window.window_controls();
-        div()
-            .size_full()
-            .relative()
-            .child(frame(
-                window,
-                titlebar(
-                    controls,
-                    brand(),
-                    div()
-                        .flex()
-                        .gap_2()
-                        .items_center()
-                        .child(status_pill(connected, scanning))
-                        .child(nav_chip(
-                            "nav-home",
-                            "HOME",
-                            page == Page::Home,
-                            cx.listener(|this, _, _, cx| this.show_page(Page::Home, cx)),
-                        ))
-                        .child(nav_chip(
-                            "nav-devices",
-                            "DEVICE",
-                            page == Page::Devices,
-                            cx.listener(|this, _, _, cx| this.show_page(Page::Devices, cx)),
-                        ))
-                        .child(nav_chip(
-                            "nav-settings",
-                            "MANUAL",
-                            page == Page::Settings,
-                            cx.listener(|this, _, _, cx| this.show_page(Page::Settings, cx)),
-                        )),
-                    cx,
-                ),
-                div().flex_1().min_h(px(0.)).child(match page {
-                    Page::Home => self.home.clone().into_any_element(),
-                    Page::Devices => self.devices.clone().into_any_element(),
-                    Page::Settings => self.settings.clone().into_any_element(),
-                }),
-            ))
-            .when(prompt, |root| {
-                root.child(close_dialog(
-                    remember,
-                    cx.listener(|this, _, _, cx| {
-                        this.remember_close = !this.remember_close;
-                        cx.notify();
-                    }),
-                    cx.listener(|this, _, window, cx| {
-                        this.choose_close(ClosePreference::Background, window, cx);
-                    }),
-                    cx.listener(|this, _, window, cx| {
-                        this.choose_close(ClosePreference::Quit, window, cx);
-                    }),
-                    cx.listener(|this, _, _, cx| {
-                        this.close_prompt = false;
-                        cx.notify();
-                    }),
-                ))
-            })
+        let overlay = if prompt || quitting {
+            div()
+                .absolute()
+                .inset_0()
+                .when(prompt, |root| {
+                    root.child(close_dialog(
+                        remember,
+                        cx.listener(|this, _, _, cx| {
+                            this.remember_close = !this.remember_close;
+                            cx.notify();
+                        }),
+                        cx.listener(|this, _, window, cx| {
+                            this.choose_close(ClosePreference::Background, window, cx);
+                        }),
+                        cx.listener(|this, _, window, cx| {
+                            this.choose_close(ClosePreference::Quit, window, cx);
+                        }),
+                        cx.listener(|this, _, _, cx| {
+                            this.close_prompt = false;
+                            cx.notify();
+                        }),
+                    ))
+                })
+                .when(quitting, |root| root.child(disconnecting_overlay()))
+                .into_any_element()
+        } else {
+            div().into_any_element()
+        };
+        frame(
+            window,
+            titlebar(
+                controls,
+                brand(),
+                div()
+                    .flex()
+                    .gap_2()
+                    .items_center()
+                    .child(status_pill(connected, scanning))
+                    .child(nav_chip(
+                        "nav-home",
+                        "主页",
+                        page == Page::Home,
+                        cx.listener(|this, _, _, cx| this.show_page(Page::Home, cx)),
+                    ))
+                    .child(nav_chip(
+                        "nav-devices",
+                        "设备",
+                        page == Page::Devices,
+                        cx.listener(|this, _, _, cx| this.show_page(Page::Devices, cx)),
+                    ))
+                    .child(nav_chip(
+                        "nav-settings",
+                        "设置",
+                        page == Page::Settings,
+                        cx.listener(|this, _, _, cx| this.show_page(Page::Settings, cx)),
+                    )),
+                cx,
+            ),
+            div().flex_1().min_h(px(0.)).child(match page {
+                Page::Home => self.home.clone().into_any_element(),
+                Page::Devices => self.devices.clone().into_any_element(),
+                Page::Settings => self.settings.clone().into_any_element(),
+            }),
+            overlay,
+        )
     }
 }
 
@@ -234,13 +240,6 @@ fn close_dialog(
                 .flex()
                 .flex_col()
                 .gap_4()
-                .child(
-                    div()
-                        .text_xs()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .text_color(rgb(STONE))
-                        .child("CLOSE"),
-                )
                 .child(
                     div()
                         .text_size(px(28.))

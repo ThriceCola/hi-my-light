@@ -56,19 +56,22 @@ pub fn request() {
             log_line("收到关机信号，但还没绑定设备状态");
             return;
         };
-        if !shutdown_once::should_turn_off(snap.off_on_shutdown) {
-            log_line("收到关机信号，设置里关灯已关");
-            OFF_ONCE.mark_started();
-            return;
-        }
         OFF_ONCE.mark_started();
         let mut session = Session::load();
-        session.restore_after_shutdown = true;
-        session.save();
         let addr = shutdown_once::turn_off_addr(
             snap.addr.as_deref(),
             session.last_addr.as_deref(),
         );
+        if !shutdown_once::should_turn_off(snap.off_on_shutdown) {
+            log_line("收到关机信号，设置里关灯已关");
+            let _ = snap.cmd.send(BleCmd::Disconnect);
+            if let Some(addr) = addr {
+                hi_my_light::release_device_blocking(&addr);
+            }
+            return;
+        }
+        session.restore_after_shutdown = true;
+        session.save();
         let _ = snap.cmd.send(BleCmd::ShutdownOff(addr.clone()));
         match addr {
             Some(addr) => {
@@ -78,8 +81,13 @@ pub fn request() {
                 ));
                 let result = run_turn_off(&addr);
                 log_line(&format!("独立关灯结果: {result}"));
+                let _ = snap.cmd.send(BleCmd::Disconnect);
+                hi_my_light::release_device_blocking(&addr);
             }
-            None => log_line("没有记住的设备地址，无法关灯"),
+            None => {
+                log_line("没有记住的设备地址，无法关灯");
+                let _ = snap.cmd.send(BleCmd::Disconnect);
+            }
         }
     });
 }

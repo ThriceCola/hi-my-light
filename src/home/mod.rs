@@ -27,10 +27,17 @@ pub enum Face {
     Rear,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum RearPane {
+    Solid,
+    Motion,
+}
+
 pub struct HomeView {
     service: Entity<LampService>,
     aspect: f32,
     face: Face,
+    rear_pane: RearPane,
     effect_group: EffectGroup,
     dragging: Option<Track>,
     tracks: slider::Tracks,
@@ -42,14 +49,16 @@ pub struct HomeView {
 impl HomeView {
     pub fn new(service: Entity<LampService>, cx: &mut Context<Self>) -> Self {
         let observe = cx.observe(&service, |_, _, cx| cx.notify());
-        let (effect_group, sv_hue) = match service.read(cx).rear.look {
-            RearLook::Play(effect) => (effect.group(), 0.0),
-            RearLook::Solid(color) => (EffectGroup::Rainbow, color.hue()),
+        let rear = &service.read(cx).rear;
+        let (rear_pane, effect_group, sv_hue) = match rear.look {
+            RearLook::Play(effect) => (RearPane::Motion, effect.group(), rear.solid.hue()),
+            RearLook::Solid(color) => (RearPane::Solid, rear.effect.group(), color.hue()),
         };
         Self {
             service,
             aspect: display_aspect(cx),
             face: Face::Front,
+            rear_pane,
             effect_group,
             dragging: None,
             tracks: slider::Tracks::default(),
@@ -86,7 +95,9 @@ impl Render for HomeView {
             .min_h(px(0.))
             .overflow_y_scroll()
             .child(page::render(self, connecting, cx))
-            .when(self.hsv_open && self.face == Face::Rear, |root| {
+            .when(
+                self.hsv_open && self.face == Face::Rear && self.rear_pane == RearPane::Solid,
+                |root| {
                 root.child(rear::hsv_popover(self, cx))
             })
     }
