@@ -477,7 +477,7 @@ fn audio_color(phase: f32, gain: f32) -> Rgb {
 }
 
 fn chase_gain(prev: f32, target: f32, dt: f32) -> f32 {
-    let speed = if target >= prev { 0.55 } else { 0.32 };
+    let speed = if target >= prev { 5.0 } else { 3.5 };
     let step = speed * dt.max(0.0);
     let delta = target - prev;
     if delta.abs() <= step {
@@ -623,19 +623,19 @@ mod tests {
 
     #[test]
     fn audio_gain_chases_target() {
-        let mut gain = 0.5;
-        for _ in 0..12 {
+        let mut gain = 0.0;
+        for _ in 0..8 {
             gain = chase_gain(gain, 1.0, 1.0 / 60.0);
         }
-        assert!(gain > 0.55);
-        assert!(gain < 0.75);
+        assert!(gain > 0.4);
+        assert!(gain < 1.0);
         let mut down = 1.0;
-        for _ in 0..12 {
+        for _ in 0..8 {
             down = chase_gain(down, 0.0, 1.0 / 60.0);
         }
-        assert!(down < 0.97);
-        assert!(down > 0.85);
-        for _ in 0..400 {
+        assert!(down < 0.7);
+        assert!(down > 0.0);
+        for _ in 0..80 {
             down = chase_gain(down, 0.0, 1.0 / 60.0);
         }
         assert_eq!(down, 0.0);
