@@ -58,9 +58,6 @@ impl DynamicSense {
     pub const WINDOW: Duration = Duration::from_secs(15);
     const WARMUP: Duration = Duration::from_secs(5);
     const COOLDOWN: Duration = Duration::from_secs(1);
-    const STEP: f32 = 5.0;
-    /// 工作点比声学目标钝 10 点；判定也按高 10 点来比，否则「刚好」会停在偏灵敏处。
-    const TARGET_BIAS: f32 = 10.0;
     const LOUD_CONTENT: f32 = 0.10;
     const SILENT_HOLD: Duration = Duration::from_secs(1);
 
@@ -102,7 +99,7 @@ impl DynamicSense {
         values.sort_by(|a, b| a.total_cmp(b));
         let floor = percentile(&values, 0.2);
         let peak = percentile(&values, 0.95);
-        let threshold = loud_rms((current + Self::TARGET_BIAS).clamp(1.0, 100.0));
+        let threshold = loud_rms(current);
 
         if peak < SILENCE_RMS * 1.5 {
             return None;
@@ -117,17 +114,12 @@ impl DynamicSense {
             return None;
         };
 
-        let target = (percent_from_rms(target_th) - Self::TARGET_BIAS).clamp(1.0, 100.0);
-        let delta = target - current;
-        if delta.abs() < 2.0 {
-            return None;
-        }
-        let next = (current + delta.signum() * delta.abs().min(Self::STEP)).clamp(1.0, 100.0);
-        if (next - current).abs() < 0.5 {
+        let target = percent_from_rms(target_th).clamp(1.0, 100.0);
+        if (target - current).abs() < 2.0 {
             return None;
         }
         self.last_change = Some(now);
-        Some(next)
+        Some(target)
     }
 
     fn recently_silent(&self, now: Instant) -> bool {
@@ -389,38 +381,14 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_settles_below_acoustic_fit() {
+    fn dynamic_jumps_straight_to_target() {
         let start = Instant::now();
         let mut sense = DynamicSense::default();
-        fill(
-            &mut sense,
-            start,
-            |i| {
-                if i % 4 == 0 {
-                    0.08
-                } else {
-                    0.05
-                }
-            },
-            80,
-        );
+        fill(&mut sense, start, |_| 0.04, 80);
         let now = start + Duration::from_millis(7900);
-        let next = sense.suggest(now, 70.0).expect("70 is one bias too hot");
-        assert!(next < 70.0, "{next}");
-        sense.clear();
-        fill(
-            &mut sense,
-            start,
-            |i| {
-                if i % 4 == 0 {
-                    0.08
-                } else {
-                    0.05
-                }
-            },
-            80,
-        );
-        assert_eq!(sense.suggest(now, 60.0), None);
+        let next = sense.suggest(now, 100.0).expect("too sensitive");
+        let want = percent_from_rms(0.04 * 1.2);
+        assert!((next - want).abs() < 0.02, "{next} vs {want}");
     }
 
     #[test]
