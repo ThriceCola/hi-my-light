@@ -26,8 +26,8 @@ pub use beat::{BeatLight, StripCmd, StripWriter, beat_color};
 pub use imp::Capture;
 pub use rhythm::{BeatRule, Drive, Rhythm};
 
-/// 官方 App 写声控帧的间隔。
-pub const TICK: Duration = Duration::from_millis(100);
+/// RMS 连续写、节拍亮着时补写，共用这个间隔。
+pub const TICK: Duration = Duration::from_millis(300);
 
 /// 声控有声帧。`0x20` 的 RGB 不是灯珠颜色；白帧让灯带自己不间断跑七彩。
 pub const LOUD_RGB: crate::protocol::Rgb = crate::protocol::Rgb::new(0xff, 0xff, 0xff);

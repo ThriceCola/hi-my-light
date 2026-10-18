@@ -272,14 +272,13 @@ mod tests {
         let now = start + Duration::from_millis(7200);
         assert!(rhythm.wants_beat(now, rule));
         assert_eq!(rhythm.drive(now, false, rule), Drive::Off);
+        let flashed = now + Duration::from_millis(40);
+        assert_eq!(rhythm.drive(flashed, true, rule), Drive::On);
         assert_eq!(
-            rhythm.drive(now + Duration::from_millis(40), true, rule),
-            Drive::On
+            rhythm.drive(flashed + TICK - Duration::from_millis(1), false, rule),
+            Drive::Idle
         );
-        assert_eq!(
-            rhythm.drive(now + Duration::from_millis(400), false, rule),
-            Drive::Off
-        );
+        assert_eq!(rhythm.drive(flashed + TICK, false, rule), Drive::Off);
         assert_eq!(
             rhythm.drive(now + Duration::from_millis(500), false, rule),
             Drive::Idle
