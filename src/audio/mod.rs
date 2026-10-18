@@ -102,7 +102,7 @@ impl DynamicSense {
         let mut values: Vec<f32> = self.samples.iter().map(|(_, rms)| *rms).collect();
         values.sort_by(|a, b| a.total_cmp(b));
         let floor = percentile(&values, 0.2);
-        let peak = percentile(&values, 0.95);
+        let peak = percentile(&values, 0.93);
         let threshold = loud_rms(current);
 
         if peak < SILENCE_RMS * 1.5 {
@@ -178,7 +178,8 @@ impl std::fmt::Display for Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+}
 
 pub fn supported() -> bool {
     imp::SUPPORTED
