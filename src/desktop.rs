@@ -221,7 +221,9 @@ mod linux {
 
     fn shell_escape(path: &Path) -> String {
         let s = path.display().to_string();
-        if s.chars().any(|c| c.is_whitespace() || matches!(c, '"' | '\'')) {
+        if s.chars()
+            .any(|c| c.is_whitespace() || matches!(c, '"' | '\''))
+        {
             format!("\"{}\"", s.replace('"', "\\\""))
         } else {
             s
@@ -232,8 +234,7 @@ mod linux {
         let exec = copy_current_binary(&bin_path())?;
         write_file(&icon_svg_path(), crate::icon::HALO_SVG.as_bytes())?;
         for size in [32_u32, 64, 128, 256] {
-            let png = crate::icon::halo_png(size)
-                .map_err(|err| io::Error::other(err))?;
+            let png = crate::icon::halo_png(size).map_err(|err| io::Error::other(err))?;
             write_file(&icon_png_path(size), &png)?;
         }
         write_file(&menu_entry_path(), desktop_body(&exec).as_bytes())?;
@@ -368,7 +369,14 @@ mod win {
             ps_single_quote(icon),
         );
         let status = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &script])
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                &script,
+            ])
             .status()?;
         if status.success() && lnk.is_file() {
             Ok(())
@@ -471,10 +479,10 @@ mod other {
 
 #[cfg(target_os = "linux")]
 use linux as platform;
-#[cfg(windows)]
-use win as platform;
 #[cfg(not(any(target_os = "linux", windows)))]
 use other as platform;
+#[cfg(windows)]
+use win as platform;
 
 pub fn menu_entry_path() -> PathBuf {
     platform::menu_entry_path()

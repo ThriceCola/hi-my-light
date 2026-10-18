@@ -2,9 +2,9 @@ use gpui::{Context, IntoElement, ParentElement, Styled, div, prelude::*, px};
 
 use crate::theme::{LINE, glow_from_kelvin, step_btn};
 
+use super::super::HomeView;
 use super::super::drag::Track;
 use super::super::slider::{self, Fill};
-use super::super::HomeView;
 
 pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
     let (on, level, kelvin) = {
@@ -15,11 +15,7 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
             snap.front.cct.kelvin(),
         )
     };
-    let glow = if on {
-        glow_from_kelvin(kelvin)
-    } else {
-        LINE
-    };
+    let glow = if on { glow_from_kelvin(kelvin) } else { LINE };
 
     div()
         .id("brightness-block")
@@ -30,14 +26,12 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
         .gap_3()
         .pt_4()
         .pb_4()
-        .child(
-            div().flex_1().min_w(px(0.)).child(slider::track_bar(
-                Track::FrontLevel,
-                level / 100.0,
-                Fill::Solid(glow),
-                cx,
-            )),
-        )
+        .child(div().flex_1().min_w(px(0.)).child(slider::track_bar(
+            Track::FrontLevel,
+            level / 100.0,
+            Fill::Solid(glow),
+            cx,
+        )))
         .child(
             div()
                 .flex()

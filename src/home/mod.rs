@@ -44,6 +44,7 @@ pub struct HomeView {
     tracks: slider::Tracks,
     sv_hue: f32,
     hsv_open: bool,
+    beat_open: bool,
     _observe: Subscription,
 }
 
@@ -66,6 +67,7 @@ impl HomeView {
             tracks: slider::Tracks::default(),
             sv_hue,
             hsv_open: false,
+            beat_open: false,
             _observe: observe,
         }
     }
@@ -99,8 +101,11 @@ impl Render for HomeView {
             .child(page::render(self, connecting, cx))
             .when(
                 self.hsv_open && self.face == Face::Rear && self.rear_pane == RearPane::Solid,
-                |root| {
-                root.child(rear::hsv_popover(self, cx))
-            })
+                |root| root.child(rear::hsv_popover(self, cx)),
+            )
+            .when(
+                self.beat_open && self.face == Face::Rear && self.rear_pane == RearPane::Audio,
+                |root| root.child(rear::beat_popover(self, cx)),
+            )
     }
 }

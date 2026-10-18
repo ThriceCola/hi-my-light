@@ -271,12 +271,7 @@ fn busy_overlay(id: &'static str, spin_id: &'static str, label: &'static str) ->
                 )
             },
         ))
-        .child(
-            div()
-                .text_sm()
-                .text_color(rgb(PAPER))
-                .child(label),
-        )
+        .child(div().text_sm().text_color(rgb(PAPER)).child(label))
 }
 
 fn resize_edge(pos: Point<Pixels>, shadow_size: Pixels, size: Size<Pixels>) -> Option<ResizeEdge> {

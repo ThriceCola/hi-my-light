@@ -28,7 +28,11 @@ pub fn initial_page(service: &LampService) -> Page {
     }
 }
 
-pub fn open_shell(cx: &mut App, service: Entity<LampService>, page: Page) -> WindowHandle<ShellView> {
+pub fn open_shell(
+    cx: &mut App,
+    service: Entity<LampService>,
+    page: Page,
+) -> WindowHandle<ShellView> {
     service.update(cx, |service, cx| {
         service.wake();
         cx.notify();
@@ -74,7 +78,10 @@ fn show_page(cx: &mut App, page: Page) {
         return;
     }
 
-    if let Some(handle) = cx.try_global::<Workspace>().and_then(|ws| ws.window.clone()) {
+    if let Some(handle) = cx
+        .try_global::<Workspace>()
+        .and_then(|ws| ws.window.clone())
+    {
         cx.defer(move |cx| {
             let _ = handle.update(cx, |shell, window, cx| {
                 shell.show_page(page, cx);

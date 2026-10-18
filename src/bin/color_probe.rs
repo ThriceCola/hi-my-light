@@ -10,9 +10,7 @@ use std::time::Duration;
 
 use uuid::Uuid;
 
-use hi_my_light::{
-    BleError, BleManager, Brightness, Channel, Clock, Level, Power, Query, Rgb,
-};
+use hi_my_light::{BleError, BleManager, Brightness, Channel, Clock, Level, Power, Query, Rgb};
 
 const TARGET_CHAR_UUID: &str = "0000fff3-0000-1000-8000-00805f9b34fb";
 const TICK: Duration = Duration::from_millis(100);
@@ -46,10 +44,7 @@ async fn pick_device(manager: &BleManager) -> anyhow::Result<btleplug::api::BDAd
         for (i, d) in devices.iter().enumerate() {
             println!("  {}. {}", i + 1, d.display_name());
         }
-        let input = read_line!(
-            "\n选择设备编号 (1-{}), Enter 刷新, q 退出: ",
-            devices.len()
-        );
+        let input = read_line!("\n选择设备编号 (1-{}), Enter 刷新, q 退出: ", devices.len());
         match input.as_str() {
             "q" | "quit" => anyhow::bail!("已取消"),
             "" => tokio::time::sleep(Duration::from_secs(2)).await,
@@ -80,11 +75,7 @@ fn pause(step: u32, total: u32, expect: &str) -> bool {
     input == "q" || input == "quit"
 }
 
-async fn fill_scroll(
-    manager: &BleManager,
-    uuid: &Uuid,
-    color: Rgb,
-) -> Result<(), BleError> {
+async fn fill_scroll(manager: &BleManager, uuid: &Uuid, color: Rgb) -> Result<(), BleError> {
     for _ in 0..FILL {
         write_frame(manager, uuid, color.scroll_frame()).await?;
         tokio::time::sleep(TICK).await;
@@ -126,18 +117,12 @@ async fn main() -> anyhow::Result<()> {
             "10 整条 ff 00 00（官方红键）",
             "若整条是红，10=整条RGB且通道顺序就是 R G B",
         ),
-        (
-            "10 整条 00 ff 00（官方绿键）",
-            "若整条是绿，第二字节是 G",
-        ),
+        ("10 整条 00 ff 00（官方绿键）", "若整条是绿，第二字节是 G"),
         (
             "10 整条 00 00 ff（官方蓝键）",
             "若整条是蓝，第三字节是 B；若这步才是红，则通道对调",
         ),
-        (
-            "10 整条 00 00 00",
-            "若整条灭，10 能清屏",
-        ),
+        ("10 整条 00 00 00", "若整条灭，10 能清屏"),
         (
             "20 连续推进 80 次 ff 00 00",
             "若整条变红，20 用的是我们发的 RGB；若仍有蓝/彩虹，20 不听这三字节当像素",
@@ -146,10 +131,7 @@ async fn main() -> anyhow::Result<()> {
             "20 连续推进 80 次 00 00 ff",
             "若整条变蓝，20 的第三字节是蓝；若变红，20 可能是 BGR",
         ),
-        (
-            "20 连续推进 80 次 00 ff 00",
-            "对照第二字节",
-        ),
+        ("20 连续推进 80 次 00 ff 00", "对照第二字节"),
         (
             "20 连续推进 80 次 00 00 00",
             "若整条灭，20 推进黑能清带；若还亮着，20 不是移位写色",

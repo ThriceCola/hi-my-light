@@ -1,9 +1,7 @@
 use std::cell::Cell;
 use std::time::Instant;
 
-use gpui::{
-    Bounds, Pixels, Window, fill, point, px, rgb, size,
-};
+use gpui::{Bounds, Pixels, Window, fill, point, px, rgb, size};
 
 use hi_my_light::{Effect, Rgb};
 
@@ -32,6 +30,8 @@ pub struct LampPreview {
     pub phase: f32,
     pub audio_loud: bool,
     pub audio_rms: f32,
+    pub audio_beat: bool,
+    pub audio_length: f32,
 }
 
 struct Layout {
@@ -123,6 +123,7 @@ fn paint_wall_wash(
         RearLook::Audio => audio_color_phase(),
         _ => preview.phase,
     };
+    let beat = matches!(preview.rear, RearLook::Audio) && preview.audio_beat;
     let audio_gain = match preview.rear {
         RearLook::Audio => Some(chase_audio_gain(audio_target_gain(
             preview.audio_rms,
@@ -131,15 +132,19 @@ fn paint_wall_wash(
         _ => None,
     };
     let sample = |t: f32| {
-        let color = match audio_gain {
-            Some(gain) => audio_color(phase, gain),
-            None => rear_rgb(
-                preview.rear,
-                t,
-                phase,
-                preview.audio_loud,
-                preview.audio_rms,
-            ),
+        let color = if beat {
+            beat_column(phase, preview.audio_length)
+        } else {
+            match audio_gain {
+                Some(gain) => audio_color(phase, gain),
+                None => rear_rgb(
+                    preview.rear,
+                    t,
+                    phase,
+                    preview.audio_loud,
+                    preview.audio_rms,
+                ),
+            }
         };
         color.scale(0.55 + rear * 0.45)
     };
@@ -157,7 +162,7 @@ fn paint_wall_wash(
         let h = (rise / layers as f32) * 1.7;
         let flare = px(lt * 16.0);
         let span = bar_w + flare * 2.;
-            let alpha = (1.0 - lt).powf(1.15) * (0.16 + rear * 0.28);
+        let alpha = (1.0 - lt).powf(1.15) * (0.16 + rear * 0.28);
         let col_w = span / cols as f32;
 
         for i in 0..cols {
@@ -184,10 +189,7 @@ fn paint_monitor(layout: &Layout, kelvin: u32, front: f32, window: &mut Window) 
     for i in 0..layers {
         let t = i as f32 / layers as f32;
         let band = Bounds {
-            origin: point(
-                layout.screen.origin.x,
-                layout.screen.origin.y + fade_h * t,
-            ),
+            origin: point(layout.screen.origin.x, layout.screen.origin.y + fade_h * t),
             size: size(layout.screen.size.width, fade_h / layers as f32 + px(1.)),
         };
         let hide = if t > 0.55 {
@@ -240,7 +242,10 @@ fn paint_front_bar(bar: Bounds<Pixels>, kelvin: u32, front: f32, window: &mut Wi
             lerp_rgb(kelvin, right, (t - 0.5) * 2.0)
         };
         let piece = Bounds {
-            origin: point(bar.origin.x + bar.size.width * (i as f32 / steps as f32), bar.origin.y),
+            origin: point(
+                bar.origin.x + bar.size.width * (i as f32 / steps as f32),
+                bar.origin.y,
+            ),
             size: size((bar.size.width / steps as f32).max(px(1.)), bar.size.height),
         };
         let lit = if front > 0.01 {
@@ -267,10 +272,9 @@ pub fn period_ms(look: RearLook, speed: f32) -> u64 {
         RearLook::Solid(_) => tween(18000.0, 8000.0),
         RearLook::Audio => 28000,
         RearLook::Play(effect) => match effect {
-            Effect::RainbowEnergy
-            | Effect::RainbowJump
-            | Effect::RgbJump
-            | Effect::YcmJump => tween(7200.0, 2800.0),
+            Effect::RainbowEnergy | Effect::RainbowJump | Effect::RgbJump | Effect::YcmJump => {
+                tween(7200.0, 2800.0)
+            }
             Effect::RainbowStrobe | Effect::RgbStrobe | Effect::YcmStrobe => tween(5600.0, 2200.0),
             Effect::SevenFade
             | Effect::RedYellowFade
@@ -323,12 +327,12 @@ fn effect_rgb(effect: Effect, t: f32, phase: f32) -> Rgb {
             let d = wrap_dist(u, p);
             color.scale((1.0 - d * 5.0).clamp(0.06, 1.0))
         }
-        Effect::RainbowFollowFwd
-        | Effect::RgbFollowFwd
-        | Effect::YcmFollowFwd => follow(pal, u, p, false),
-        Effect::RainbowFollowRev
-        | Effect::RgbFollowRev
-        | Effect::YcmFollowRev => follow(pal, u, p, true),
+        Effect::RainbowFollowFwd | Effect::RgbFollowFwd | Effect::YcmFollowFwd => {
+            follow(pal, u, p, false)
+        }
+        Effect::RainbowFollowRev | Effect::RgbFollowRev | Effect::YcmFollowRev => {
+            follow(pal, u, p, true)
+        }
         Effect::RainbowDriftFwd | Effect::RgbDriftFwd | Effect::YcmDriftFwd => {
             drift(pal, u, p, false)
         }
@@ -446,6 +450,14 @@ fn wrap_index(i: i32, n: usize) -> usize {
     (((i % n) + n) % n) as usize
 }
 
+/// 声控在滚或停。灯上没有按 RGB 上色这一档，预览也不分成两种颜色。
+fn beat_column(phase: f32, length: f32) -> Rgb {
+    if length <= 0.02 {
+        return Rgb::BLACK;
+    }
+    audio_color(phase, 0.92)
+}
+
 /// 整条同色，颜色慢慢过渡；响度只改亮度。
 fn audio_level(phase: f32, rms: f32, loud: bool) -> Rgb {
     audio_color(phase, audio_target_gain(rms, loud))
@@ -496,7 +508,10 @@ fn chase_audio_gain(target: f32) -> f32 {
         let next = match slot.get() {
             None => chase_gain(0.0, target, 1.0 / 60.0),
             Some((prev_at, prev)) => {
-                let dt = now.saturating_duration_since(prev_at).as_secs_f32().min(1.0 / 30.0);
+                let dt = now
+                    .saturating_duration_since(prev_at)
+                    .as_secs_f32()
+                    .min(1.0 / 30.0);
                 chase_gain(prev, target, dt)
             }
         };
@@ -581,7 +596,8 @@ fn palette(effect: Effect) -> &'static [Rgb] {
 
 #[cfg(test)]
 mod tests {
-    use super::{audio_level, chase_gain, preview_gain};
+    use super::{audio_level, beat_column, chase_gain, preview_gain};
+    use hi_my_light::Rgb;
 
     fn luma(rms: f32, loud: bool) -> u16 {
         let c = audio_level(0.0, rms, loud);
@@ -597,8 +613,8 @@ mod tests {
 
     #[test]
     fn audio_is_uniform_across_the_bar() {
-        use crate::lamp::RearLook;
         use super::rear_rgb;
+        use crate::lamp::RearLook;
         let look = RearLook::Audio;
         assert_eq!(
             rear_rgb(look, 0.05, 0.3, true, 0.12),
@@ -611,6 +627,14 @@ mod tests {
         let a = audio_level(0.0, 0.2, true);
         let b = audio_level(0.5, 0.2, true);
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn beat_preview_is_on_or_off() {
+        let rolling = beat_column(0.2, 1.0);
+        assert_ne!(rolling, Rgb::BLACK);
+        assert_eq!(beat_column(0.2, 0.0), Rgb::BLACK);
+        assert_eq!(rolling, beat_column(0.2, 0.4));
     }
 
     #[test]

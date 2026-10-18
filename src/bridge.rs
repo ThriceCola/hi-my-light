@@ -177,11 +177,7 @@ async fn run(cmd_rx: Receiver<BleCmd>, msg_tx: Sender<BleMsg>) {
     }
 }
 
-async fn handshake(
-    manager: &hi_my_light::BleManager,
-    uuid: &Uuid,
-    msg_tx: &Sender<BleMsg>,
-) {
+async fn handshake(manager: &hi_my_light::BleManager, uuid: &Uuid, msg_tx: &Sender<BleMsg>) {
     let query = Query.frame();
     let clock = Clock::now().frame();
     for frame in [query, query, clock, clock] {

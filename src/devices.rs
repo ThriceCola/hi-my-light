@@ -68,7 +68,11 @@ impl Render for DevicesView {
                             .justify_center()
                             .text_sm()
                             .text_color(rgb(STONE))
-                            .child(if scanning { "扫描中" } else { "未发现设备" })
+                            .child(if scanning {
+                                "扫描中"
+                            } else {
+                                "未发现设备"
+                            })
                             .into_any_element()
                     } else {
                         uniform_list(
@@ -76,8 +80,7 @@ impl Render for DevicesView {
                             count,
                             cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
                                 let devices = this.service.read(cx).devices.clone();
-                                let connected_addr =
-                                    this.service.read(cx).connected_addr.clone();
+                                let connected_addr = this.service.read(cx).connected_addr.clone();
                                 let mut items = Vec::new();
                                 for ix in range {
                                     if let Some(device) = devices.get(ix) {
@@ -226,7 +229,16 @@ fn device_row(
                                 .flex()
                                 .gap_2()
                                 .items_center()
-                                .child(div().text_sm().text_color(if preferred || selected { rgb(INK) } else { rgb(PAPER) }).child(device.name.clone()))
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(if preferred || selected {
+                                            rgb(INK)
+                                        } else {
+                                            rgb(PAPER)
+                                        })
+                                        .child(device.name.clone()),
+                                )
                                 .when(preferred, |row| {
                                     row.child(
                                         div()

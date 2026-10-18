@@ -45,7 +45,21 @@ pub struct LampService {
     pub audio_loud: bool,
     pub audio_sensitivity: Level,
     pub audio_dynamic: bool,
+    pub audio_beat: bool,
+    pub beat_quiet_secs: f32,
+    pub beat_quiet_pct: f32,
+    pub beat_loud_secs: f32,
+    pub beat_loud_pct: f32,
+    pub beat_always: bool,
+    pub beat_response_ms: Option<u32>,
+    pub audio_length: f32,
+    pub audio_beat_ready: bool,
+    pub audio_beat_fault: bool,
     dynamic_sense: audio::DynamicSense,
+    rhythm: audio::Rhythm,
+    pub audio_follow_beat: bool,
+    pub audio_beat_lit: bool,
+    audio_seq: u64,
     quiet_since: Option<Instant>,
     audio_retry_at: Option<Instant>,
     last_scroll: Instant,
@@ -142,7 +156,21 @@ impl LampService {
             audio_loud: false,
             audio_sensitivity: Level::from_byte(session.rear.audio_sensitivity),
             audio_dynamic: session.rear.audio_dynamic,
+            audio_beat: session.rear.audio_beat,
+            beat_quiet_secs: f32::from(session.rear.beat_quiet_secs.clamp(1, 30)),
+            beat_quiet_pct: f32::from(session.rear.beat_quiet_pct.min(100)),
+            beat_loud_secs: f32::from(session.rear.beat_loud_secs.clamp(1, 30)),
+            beat_loud_pct: f32::from(session.rear.beat_loud_pct.min(100)),
+            beat_always: session.rear.beat_always,
+            beat_response_ms: None,
+            audio_length: 0.0,
+            audio_beat_ready: false,
+            audio_beat_fault: false,
             dynamic_sense: audio::DynamicSense::default(),
+            rhythm: audio::Rhythm::default(),
+            audio_follow_beat: false,
+            audio_beat_lit: false,
+            audio_seq: 0,
             quiet_since: None,
             audio_retry_at: None,
             last_scroll: Instant::now() - audio::TICK,
@@ -176,11 +204,8 @@ impl LampService {
             .clone()
             .or_else(|| self.remembered_addr.clone());
         self.send(BleCmd::Disconnect);
-        self.shutdown_quit_at = Some(Instant::now() + Duration::from_millis(if addr.is_some() {
-            2200
-        } else {
-            80
-        }));
+        self.shutdown_quit_at =
+            Some(Instant::now() + Duration::from_millis(if addr.is_some() { 2200 } else { 80 }));
         if let Some(addr) = addr {
             cx.spawn(async move |this, cx| {
                 cx.background_executor()
@@ -324,6 +349,12 @@ impl LampService {
                 let mut rear = RearSnap::from_lamp(&self.rear);
                 rear.audio_sensitivity = self.audio_sensitivity.byte();
                 rear.audio_dynamic = self.audio_dynamic;
+                rear.audio_beat = self.audio_beat;
+                rear.beat_quiet_secs = self.beat_quiet_secs.round() as u8;
+                rear.beat_quiet_pct = self.beat_quiet_pct.round() as u8;
+                rear.beat_loud_secs = self.beat_loud_secs.round() as u8;
+                rear.beat_loud_pct = self.beat_loud_pct.round() as u8;
+                rear.beat_always = self.beat_always;
                 rear
             },
         }
@@ -421,12 +452,74 @@ impl LampService {
         }
     }
 
+    pub fn beat_rule(&self) -> audio::BeatRule {
+        audio::BeatRule {
+            quiet_secs: self.beat_quiet_secs,
+            quiet_pct: self.beat_quiet_pct,
+            loud_secs: self.beat_loud_secs,
+            loud_pct: self.beat_loud_pct,
+            always: self.beat_always,
+        }
+    }
+
+    pub fn set_beat_quiet_secs(&mut self, secs: f32) {
+        self.beat_quiet_secs = secs.round().clamp(1.0, 30.0);
+    }
+
+    pub fn set_beat_quiet_pct(&mut self, pct: f32) {
+        self.beat_quiet_pct = pct.round().clamp(0.0, 100.0);
+    }
+
+    pub fn set_beat_loud_secs(&mut self, secs: f32) {
+        self.beat_loud_secs = secs.round().clamp(1.0, 30.0);
+    }
+
+    pub fn set_beat_loud_pct(&mut self, pct: f32) {
+        self.beat_loud_pct = pct.round().clamp(0.0, 100.0);
+    }
+
+    pub fn toggle_beat_always(&mut self) {
+        self.beat_always = !self.beat_always;
+        self.persist();
+    }
+
     pub fn toggle_audio_dynamic(&mut self) {
         self.audio_dynamic = !self.audio_dynamic;
         if !self.audio_dynamic {
             self.dynamic_sense.clear();
         }
         self.persist();
+    }
+
+    pub fn toggle_audio_beat(&mut self) {
+        self.audio_beat = !self.audio_beat;
+        if let Some(capture) = self.capture.as_ref() {
+            capture.set_beat(self.audio_beat);
+        }
+        self.rhythm.reset();
+        self.audio_follow_beat = false;
+        self.audio_beat_lit = false;
+        self.audio_length = 0.0;
+        self.audio_seq = 0;
+        self.audio_beat_ready = self
+            .capture
+            .as_ref()
+            .is_some_and(|capture| capture.beat_ready());
+        self.audio_beat_fault = self
+            .capture
+            .as_ref()
+            .is_some_and(|capture| capture.beat_error().is_some());
+        self.persist();
+    }
+
+    pub fn audio_beat_label(&self) -> &'static str {
+        if self.audio_beat_fault {
+            "节拍失败"
+        } else if self.audio_beat && !self.audio_beat_ready {
+            "载入中"
+        } else {
+            "节拍"
+        }
     }
 
     fn gate_audio(&mut self) {
@@ -541,6 +634,13 @@ impl LampService {
         self.audio_rms = 0.0;
         self.audio_retry_at = None;
         self.dynamic_sense.clear();
+        self.rhythm.reset();
+        self.audio_follow_beat = false;
+        self.audio_beat_lit = false;
+        self.audio_length = 0.0;
+        self.audio_seq = 0;
+        self.audio_beat_ready = false;
+        self.audio_beat_fault = false;
     }
 
     fn want_capture(&self) -> bool {
@@ -573,14 +673,12 @@ impl LampService {
 
         let mut dirty = false;
         if self.capture.is_none() {
-            if self
-                .audio_retry_at
-                .is_some_and(|at| Instant::now() < at)
-            {
+            if self.audio_retry_at.is_some_and(|at| Instant::now() < at) {
                 return false;
             }
             match Capture::start() {
                 Ok(capture) => {
+                    capture.set_beat(self.audio_beat);
                     self.capture = Some(capture);
                     self.audio_retry_at = None;
                     dirty = true;
@@ -599,6 +697,8 @@ impl LampService {
         let was_loud = self.audio_loud;
         let was_rms = self.audio_rms;
         let was_caption = self.audio_caption();
+        let mut heard = None;
+        let mut beat_hit = false;
         match capture.try_sample() {
             Ok(Some(sample)) => {
                 self.audio_rms = sample.rms;
@@ -614,6 +714,16 @@ impl LampService {
                         self.persist();
                     }
                 }
+                if self.audio_beat && sample.seq != self.audio_seq {
+                    self.audio_seq = sample.seq;
+                    let now = Instant::now();
+                    self.rhythm.note(now, sample.rms, self.audio_loud);
+                    beat_hit = sample.downbeat || sample.beat;
+                    if let Some(ms) = sample.beat_lag_ms {
+                        self.beat_response_ms = Some(ms);
+                    }
+                    heard = Some(sample.seq);
+                }
             }
             Ok(None) => {}
             Err(err) => {
@@ -623,6 +733,17 @@ impl LampService {
                 return true;
             }
         }
+        if let Some(seq) = heard {
+            if let Some(capture) = self.capture.as_ref() {
+                capture.clear_beat(seq);
+            }
+        }
+        if self.audio_beat && was_caption != "暂停中" && self.audio_caption() == "暂停中" {
+            if let Some(capture) = self.capture.as_ref() {
+                capture.reset_beat();
+            }
+            self.beat_response_ms = None;
+        }
 
         if self.audio_caption() != was_caption
             || self.audio_loud != was_loud
@@ -631,13 +752,81 @@ impl LampService {
             dirty = true;
         }
 
-        if self.connected() {
-            if self.audio_loud && self.last_scroll.elapsed() >= audio::TICK {
-                self.write(audio::LOUD_RGB.scroll_frame());
-                self.last_scroll = Instant::now();
-            } else if was_loud && !self.audio_loud {
-                self.write(Rgb::BLACK.scroll_frame());
+        if self.audio_beat {
+            if self.note_beat_model() {
+                dirty = true;
             }
+            if self.paint_rhythm(was_loud, beat_hit) {
+                dirty = true;
+            }
+        } else if self.write_rms(was_loud) {
+            dirty = true;
+        }
+        dirty
+    }
+
+    fn write_rms(&mut self, was_loud: bool) -> bool {
+        if !self.connected() {
+            return false;
+        }
+        if self.audio_loud && self.last_scroll.elapsed() >= audio::TICK {
+            self.write(audio::LOUD_RGB.scroll_frame());
+            self.last_scroll = Instant::now();
+            true
+        } else if was_loud && !self.audio_loud {
+            self.write(Rgb::BLACK.scroll_frame());
+            true
+        } else {
+            false
+        }
+    }
+
+    fn paint_rhythm(&mut self, was_loud: bool, beat_hit: bool) -> bool {
+        let now = Instant::now();
+        let drive = self.rhythm.drive(now, beat_hit, self.beat_rule());
+        let follow = self.rhythm.wants_beat(now, self.beat_rule());
+        let lit = self.rhythm.lit(now);
+        let dirty = follow != self.audio_follow_beat
+            || lit != self.audio_beat_lit
+            || beat_hit && self.beat_response_ms.is_some();
+        self.audio_follow_beat = follow;
+        self.audio_beat_lit = lit;
+        if !self.connected() {
+            return dirty;
+        }
+        match drive {
+            audio::Drive::Rms => dirty || self.write_rms(was_loud),
+            audio::Drive::On => {
+                self.write(audio::LOUD_RGB.scroll_frame());
+                self.last_scroll = now;
+                true
+            }
+            audio::Drive::Off => {
+                self.write(Rgb::BLACK.scroll_frame());
+                true
+            }
+            audio::Drive::Idle => dirty,
+        }
+    }
+
+    fn note_beat_model(&mut self) -> bool {
+        let Some(capture) = self.capture.as_ref() else {
+            return false;
+        };
+        let ready = capture.beat_ready();
+        let fault = capture.beat_error();
+        let mut dirty = false;
+        if ready != self.audio_beat_ready {
+            self.audio_beat_ready = ready;
+            dirty = true;
+        }
+        let is_fault = fault.is_some();
+        if is_fault != self.audio_beat_fault {
+            self.audio_beat_fault = is_fault;
+            if let Some(err) = fault {
+                self.status = format!("节拍: {err}").into();
+            }
+            dirty = true;
         }
         dirty
     }
@@ -740,6 +929,9 @@ impl LampService {
                     self.connected_addr = None;
                     self.front.extinguish();
                     self.rear.extinguish();
+                    self.rhythm.reset();
+                    self.audio_follow_beat = false;
+                    self.audio_beat_lit = false;
                     self.status = "已断开".into();
                     self.persist();
                 }

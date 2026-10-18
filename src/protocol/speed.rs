@@ -24,7 +24,13 @@ mod tests {
 
     #[test]
     fn captured_extrema() {
-        assert_eq!(Speed::new(Level::MIN).frame().hex(), "7e 07 02 01 ff ff ff 00 ef");
-        assert_eq!(Speed::new(Level::MAX).frame().hex(), "7e 07 02 64 ff ff ff 00 ef");
+        assert_eq!(
+            Speed::new(Level::MIN).frame().hex(),
+            "7e 07 02 01 ff ff ff 00 ef"
+        );
+        assert_eq!(
+            Speed::new(Level::MAX).frame().hex(),
+            "7e 07 02 64 ff ff ff 00 ef"
+        );
     }
 }

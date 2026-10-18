@@ -211,8 +211,8 @@ mod win {
         DestroyIcon, DestroyMenu, DispatchMessageW, GetCursorPos, GetMessageW, HICON, ICONINFO,
         IMAGE_ICON, LR_DEFAULTSIZE, LR_SHARED, LoadImageW, MF_SEPARATOR, MF_STRING, MSG,
         RegisterClassW, RegisterWindowMessageW, SetForegroundWindow, TPM_RETURNCMD,
-        TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_DESTROY, WM_LBUTTONUP,
-        WM_RBUTTONUP, WM_USER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
+        TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_DESTROY, WM_LBUTTONUP, WM_RBUTTONUP,
+        WM_USER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
     };
 
     const WM_TRAYICON: u32 = WM_USER + 1;
@@ -356,10 +356,7 @@ mod win {
         let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
     }
 
-    fn notify_data(
-        hwnd: HWND,
-        icon: HICON,
-    ) -> NOTIFYICONDATAW {
+    fn notify_data(hwnd: HWND, icon: HICON) -> NOTIFYICONDATAW {
         let mut nid = unsafe { std::mem::zeroed::<NOTIFYICONDATAW>() };
         nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
         nid.hWnd = hwnd;
@@ -410,19 +407,8 @@ mod win {
         if module.is_null() {
             return None;
         }
-        let handle = LoadImageW(
-            module,
-            1 as _,
-            IMAGE_ICON,
-            0,
-            0,
-            LR_DEFAULTSIZE | LR_SHARED,
-        );
-        if handle.is_null() {
-            None
-        } else {
-            Some(handle)
-        }
+        let handle = LoadImageW(module, 1 as _, IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED);
+        if handle.is_null() { None } else { Some(handle) }
     }
 
     fn wide(s: &str) -> Vec<u16> {

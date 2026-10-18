@@ -6,8 +6,8 @@ use gpui::{
 
 use crate::theme::{PAPER, STONE, TRACK, lerp_rgb};
 
-use super::drag::{Track, TrackDrag};
 use super::HomeView;
+use super::drag::{Track, TrackDrag};
 
 #[derive(Clone, Copy)]
 pub enum Fill {
@@ -23,6 +23,10 @@ pub struct Tracks {
     pub rear_level: Bounds<Pixels>,
     pub rear_speed: Bounds<Pixels>,
     pub audio_sense: Bounds<Pixels>,
+    pub beat_quiet_time: Bounds<Pixels>,
+    pub beat_quiet_pct: Bounds<Pixels>,
+    pub beat_loud_time: Bounds<Pixels>,
+    pub beat_loud_pct: Bounds<Pixels>,
     pub hue: Bounds<Pixels>,
     pub sat_val: Bounds<Pixels>,
 }
@@ -35,6 +39,10 @@ impl Tracks {
             Track::RearLevel => self.rear_level,
             Track::RearSpeed => self.rear_speed,
             Track::AudioSense => self.audio_sense,
+            Track::BeatQuietTime => self.beat_quiet_time,
+            Track::BeatQuietPct => self.beat_quiet_pct,
+            Track::BeatLoudTime => self.beat_loud_time,
+            Track::BeatLoudPct => self.beat_loud_pct,
             Track::Hue => self.hue,
             Track::SatVal => self.sat_val,
         }
@@ -47,6 +55,10 @@ impl Tracks {
             Track::RearLevel => self.rear_level = bounds,
             Track::RearSpeed => self.rear_speed = bounds,
             Track::AudioSense => self.audio_sense = bounds,
+            Track::BeatQuietTime => self.beat_quiet_time = bounds,
+            Track::BeatQuietPct => self.beat_quiet_pct = bounds,
+            Track::BeatLoudTime => self.beat_loud_time = bounds,
+            Track::BeatLoudPct => self.beat_loud_pct = bounds,
             Track::Hue => self.hue = bounds,
             Track::SatVal => self.sat_val = bounds,
         }
@@ -90,12 +102,7 @@ pub fn row(
         .child(track_bar(track, t, fill, cx))
 }
 
-pub fn track_bar(
-    track: Track,
-    t: f32,
-    fill: Fill,
-    cx: &mut Context<HomeView>,
-) -> impl IntoElement {
+pub fn track_bar(track: Track, t: f32, fill: Fill, cx: &mut Context<HomeView>) -> impl IntoElement {
     let t = t.clamp(0.0, 1.0);
     let h = match fill {
         Fill::Cct | Fill::Hue => px(28.),
@@ -117,13 +124,15 @@ pub fn track_bar(
             }),
         )
         .on_drag(TrackDrag(track), |drag, _, _, cx| cx.new(|_| *drag))
-        .on_drag_move(cx.listener(move |this, ev: &DragMoveEvent<TrackDrag>, _, cx| {
-            if ev.drag(cx).0 != track {
-                return;
-            }
-            this.dragging = Some(track);
-            apply_track(this, track, ratio(ev.event.position.x, ev.bounds), cx);
-        }))
+        .on_drag_move(
+            cx.listener(move |this, ev: &DragMoveEvent<TrackDrag>, _, cx| {
+                if ev.drag(cx).0 != track {
+                    return;
+                }
+                this.dragging = Some(track);
+                apply_track(this, track, ratio(ev.event.position.x, ev.bounds), cx);
+            }),
+        )
         .on_mouse_up(
             MouseButton::Left,
             cx.listener(|this, _, _, cx| this.end_drag(cx)),
@@ -258,6 +267,10 @@ fn apply_track(this: &mut HomeView, track: Track, t: f32, cx: &mut Context<HomeV
             Track::RearLevel => service.set_rear_level(t * 100.0),
             Track::RearSpeed => service.set_speed(t * 100.0),
             Track::AudioSense => service.set_audio_sensitivity(t * 100.0),
+            Track::BeatQuietTime => service.set_beat_quiet_secs(1.0 + t * 29.0),
+            Track::BeatQuietPct => service.set_beat_quiet_pct(t * 100.0),
+            Track::BeatLoudTime => service.set_beat_loud_secs(1.0 + t * 29.0),
+            Track::BeatLoudPct => service.set_beat_loud_pct(t * 100.0),
             Track::Hue => {
                 let (_, s, v) = match service.rear.look {
                     crate::lamp::RearLook::Solid(color) => color.hsv(),
@@ -298,6 +311,10 @@ const fn track_id(track: Track) -> &'static str {
         Track::RearLevel => "track-rear-level",
         Track::RearSpeed => "track-rear-speed",
         Track::AudioSense => "track-audio-sense",
+        Track::BeatQuietTime => "track-beat-quiet-time",
+        Track::BeatQuietPct => "track-beat-quiet-pct",
+        Track::BeatLoudTime => "track-beat-loud-time",
+        Track::BeatLoudPct => "track-beat-loud-pct",
         Track::Hue => "track-hue",
         Track::SatVal => "track-sat-val",
     }

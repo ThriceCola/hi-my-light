@@ -63,6 +63,18 @@ pub struct RearSnap {
     pub audio_sensitivity: u8,
     #[serde(default)]
     pub audio_dynamic: bool,
+    #[serde(default)]
+    pub audio_beat: bool,
+    #[serde(default = "default_beat_secs")]
+    pub beat_quiet_secs: u8,
+    #[serde(default = "default_quiet_pct")]
+    pub beat_quiet_pct: u8,
+    #[serde(default = "default_beat_secs")]
+    pub beat_loud_secs: u8,
+    #[serde(default = "default_loud_pct")]
+    pub beat_loud_pct: u8,
+    #[serde(default)]
+    pub beat_always: bool,
 }
 
 fn default_true() -> bool {
@@ -89,6 +101,18 @@ fn default_audio_sensitivity() -> u8 {
     70
 }
 
+fn default_beat_secs() -> u8 {
+    7
+}
+
+fn default_quiet_pct() -> u8 {
+    100
+}
+
+fn default_loud_pct() -> u8 {
+    45
+}
+
 impl Default for FrontSnap {
     fn default() -> Self {
         Self {
@@ -111,6 +135,12 @@ impl Default for RearSnap {
             audio: false,
             audio_sensitivity: default_audio_sensitivity(),
             audio_dynamic: false,
+            audio_beat: false,
+            beat_quiet_secs: default_beat_secs(),
+            beat_quiet_pct: default_quiet_pct(),
+            beat_loud_secs: default_beat_secs(),
+            beat_loud_pct: default_loud_pct(),
+            beat_always: false,
         }
     }
 }
@@ -234,6 +264,12 @@ impl RearSnap {
             audio: matches!(rear.look, RearLook::Audio),
             audio_sensitivity: default_audio_sensitivity(),
             audio_dynamic: false,
+            audio_beat: false,
+            beat_quiet_secs: default_beat_secs(),
+            beat_quiet_pct: default_quiet_pct(),
+            beat_loud_secs: default_beat_secs(),
+            beat_loud_pct: default_loud_pct(),
+            beat_always: false,
         }
     }
 }

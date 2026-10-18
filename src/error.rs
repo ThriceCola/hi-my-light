@@ -45,5 +45,4 @@ impl fmt::Display for BleError {
     }
 }
 
-impl std::error::Error for BleError {
-}
+impl std::error::Error for BleError {}

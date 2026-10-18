@@ -35,11 +35,7 @@ impl ShutdownOnce {
 /// 关机线程可能已经把磁盘上的 restore 写成 true。GUI 普通 persist
 /// 内存里往往还是 false，不能把这个标志盖掉；只有亮灯成功后才能 clear。
 pub fn restore_flag_to_write(disk: bool, memory: bool, clear: bool) -> bool {
-    if clear {
-        false
-    } else {
-        memory || disk
-    }
+    if clear { false } else { memory || disk }
 }
 
 /// 快照里没地址时（后台很久、绑定丢了）用 session 记住的灯。

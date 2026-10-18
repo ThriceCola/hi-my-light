@@ -6,26 +6,30 @@
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
+mod beat;
 #[cfg(target_os = "linux")]
 mod linux;
-#[cfg(target_os = "windows")]
-mod windows;
+mod rhythm;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 mod stub;
+#[cfg(target_os = "windows")]
+mod windows;
 
 #[cfg(target_os = "linux")]
 use linux as imp;
-#[cfg(target_os = "windows")]
-use windows as imp;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 use stub as imp;
+#[cfg(target_os = "windows")]
+use windows as imp;
 
+pub use beat::{BeatLight, StripCmd, StripWriter, beat_color};
 pub use imp::Capture;
+pub use rhythm::{BeatRule, Drive, Rhythm};
 
 /// 官方 App 写声控帧的间隔。
 pub const TICK: Duration = Duration::from_millis(100);
 
-/// 有声：RR+GG+BB ≥ 0x65，三通道都 ≥ 0x67 时灯带不间断换色。
+/// 声控有声帧。`0x20` 的 RGB 不是灯珠颜色；白帧让灯带自己不间断跑七彩。
 pub const LOUD_RGB: crate::protocol::Rgb = crate::protocol::Rgb::new(0xff, 0xff, 0xff);
 
 /// 音量条还能看见就算有声；只有低过这条才算彻底静音。
@@ -149,6 +153,14 @@ fn percentile(sorted: &[f32], p: f32) -> f32 {
 pub struct Sample {
     pub rms: f32,
     pub loud: bool,
+    /// 这一块音频的序号。同一块会被界面读到多次，节拍只在序号变化时记一次。
+    pub seq: u64,
+    /// 块尾约 30 ms 的 RMS。节拍模式用它做快包络。
+    pub rms_fast: f32,
+    pub downbeat: bool,
+    pub beat: bool,
+    /// 这一拍相对已经听到的音频晚了多少毫秒。没有拍时是空。
+    pub beat_lag_ms: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -285,12 +297,7 @@ mod tests {
         let start = Instant::now();
         let mut sense = DynamicSense::default();
         fill(&mut sense, start, |_| 0.004, 80);
-        fill(
-            &mut sense,
-            start + DynamicSense::WINDOW,
-            |_| 0.04,
-            80,
-        );
+        fill(&mut sense, start + DynamicSense::WINDOW, |_| 0.04, 80);
         let now = start + DynamicSense::WINDOW + Duration::from_millis(7900);
         let next = sense.suggest(now, 100.0).expect("recent floor too hot");
         assert!(next < 100.0, "{next}");
@@ -301,12 +308,7 @@ mod tests {
         let start = Instant::now();
         let mut sense = DynamicSense::default();
         fill(&mut sense, start, |_| 0.04, 80);
-        fill(
-            &mut sense,
-            start + DynamicSense::WINDOW,
-            |_| 0.004,
-            80,
-        );
+        fill(&mut sense, start + DynamicSense::WINDOW, |_| 0.004, 80);
         let now = start + DynamicSense::WINDOW + Duration::from_millis(7900);
         assert_eq!(sense.suggest(now, 100.0), None);
     }
@@ -319,11 +321,7 @@ mod tests {
             &mut sense,
             start,
             |i| {
-                if i % 10 == 0 {
-                    0.08
-                } else {
-                    0.004
-                }
+                if i % 10 == 0 { 0.08 } else { 0.004 }
             },
             80,
         );
@@ -341,20 +339,11 @@ mod tests {
             &mut sense,
             start,
             |i| {
-                if i % 10 == 0 {
-                    0.08
-                } else {
-                    0.004
-                }
+                if i % 10 == 0 { 0.08 } else { 0.004 }
             },
             80,
         );
-        fill(
-            &mut sense,
-            start + Duration::from_millis(8000),
-            |_| 0.0,
-            20,
-        );
+        fill(&mut sense, start + Duration::from_millis(8000), |_| 0.0, 20);
         let now = start + Duration::from_millis(9900);
         assert_eq!(sense.suggest(now, 1.0), None);
         assert_eq!(sense.suggest(now, 70.0), None);
@@ -368,11 +357,7 @@ mod tests {
             &mut sense,
             start,
             |i| {
-                if i % 4 == 0 {
-                    0.14
-                } else {
-                    0.02
-                }
+                if i % 4 == 0 { 0.14 } else { 0.02 }
             },
             80,
         );

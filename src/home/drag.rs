@@ -7,6 +7,10 @@ pub enum Track {
     RearLevel,
     RearSpeed,
     AudioSense,
+    BeatQuietTime,
+    BeatQuietPct,
+    BeatLoudTime,
+    BeatLoudPct,
     Hue,
     SatVal,
 }

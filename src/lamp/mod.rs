@@ -4,4 +4,4 @@ mod scene;
 
 pub use front::Front;
 pub use rear::{Rear, RearLook};
-pub use scene::{Scene, SCENES};
+pub use scene::{SCENES, Scene};

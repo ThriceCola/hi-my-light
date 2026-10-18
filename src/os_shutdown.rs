@@ -58,10 +58,7 @@ pub fn request() {
         };
         OFF_ONCE.mark_started();
         let mut session = Session::load();
-        let addr = shutdown_once::turn_off_addr(
-            snap.addr.as_deref(),
-            session.last_addr.as_deref(),
-        );
+        let addr = shutdown_once::turn_off_addr(snap.addr.as_deref(), session.last_addr.as_deref());
         if !shutdown_once::should_turn_off(snap.off_on_shutdown) {
             log_line("收到关机信号，设置里关灯已关");
             let _ = snap.cmd.send(BleCmd::Disconnect);
@@ -75,10 +72,7 @@ pub fn request() {
         let _ = snap.cmd.send(BleCmd::ShutdownOff(addr.clone()));
         match addr {
             Some(addr) => {
-                log_line(&format!(
-                    "开始独立关灯 {addr} ui_lamp_on={}",
-                    snap.lamp_on
-                ));
+                log_line(&format!("开始独立关灯 {addr} ui_lamp_on={}", snap.lamp_on));
                 let result = run_turn_off(&addr);
                 log_line(&format!("独立关灯结果: {result}"));
                 let _ = snap.cmd.send(BleCmd::Disconnect);
@@ -298,7 +292,10 @@ async fn watch_logind_once() -> WatchEnd {
             return WatchEnd::Disconnected(format!("订阅 PrepareForShutdown 失败: {err}"));
         }
     };
-    let mut signals_meta = proxy.receive_prepare_for_shutdown_with_metadata().await.ok();
+    let mut signals_meta = proxy
+        .receive_prepare_for_shutdown_with_metadata()
+        .await
+        .ok();
 
     let mut delay_fd = take_inhibit(&proxy).await;
     if delay_fd.is_some() {
@@ -397,8 +394,7 @@ unsafe fn win_message_loop() {
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, MSG, RegisterClassW,
-        TranslateMessage, WM_ENDSESSION, WM_QUERYENDSESSION, WNDCLASSW, WS_EX_TOOLWINDOW,
-        WS_POPUP,
+        TranslateMessage, WM_ENDSESSION, WM_QUERYENDSESSION, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
     };
 
     unsafe extern "system" fn wndproc(

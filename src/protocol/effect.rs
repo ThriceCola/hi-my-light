@@ -142,10 +142,9 @@ impl Effect {
 
     pub const fn group(self) -> EffectGroup {
         match self {
-            Self::AutoLoop
-            | Self::RainbowFwd
-            | Self::RainbowRev
-            | Self::RainbowEnergy => EffectGroup::Rainbow,
+            Self::AutoLoop | Self::RainbowFwd | Self::RainbowRev | Self::RainbowEnergy => {
+                EffectGroup::Rainbow
+            }
             Self::RainbowJump
             | Self::RgbJump
             | Self::YcmJump
@@ -256,8 +255,14 @@ mod tests {
 
     #[test]
     fn captured_rainbow() {
-        assert_eq!(Effect::RainbowFwd.frame().hex(), "7e 07 03 01 06 ff ff 00 ef");
-        assert_eq!(Effect::RainbowRev.frame().hex(), "7e 07 03 02 06 ff ff 00 ef");
+        assert_eq!(
+            Effect::RainbowFwd.frame().hex(),
+            "7e 07 03 01 06 ff ff 00 ef"
+        );
+        assert_eq!(
+            Effect::RainbowRev.frame().hex(),
+            "7e 07 03 02 06 ff ff 00 ef"
+        );
         assert_eq!(Effect::AutoLoop.frame().hex(), "7e 07 03 00 06 ff ff 00 ef");
     }
 

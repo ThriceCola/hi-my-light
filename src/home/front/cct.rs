@@ -2,9 +2,9 @@ use gpui::{Context, IntoElement, ParentElement, Styled, div, prelude::*, rgb};
 
 use crate::theme::{STONE, step_btn};
 
+use super::super::HomeView;
 use super::super::drag::Track;
 use super::super::slider::{self, Fill};
-use super::super::HomeView;
 
 pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
     let kelvin = this.service.read(cx).front.cct.kelvin();

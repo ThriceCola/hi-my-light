@@ -1,7 +1,7 @@
 //! PipeWire 上的 Pulse 兼容层：录默认扬声器的 monitor，不是麦克风。
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -12,16 +12,25 @@ use libpulse_simple_binding::Simple;
 
 use super::{Error, Sample, TICK};
 
+mod beat;
+
+use beat::{BeatCtl, BeatFollow};
+
 pub const SUPPORTED: bool = true;
 
 const RATE: u32 = 48_000;
 const CHANNELS: u8 = 2;
 const CHECK_SINK: Duration = Duration::from_secs(2);
+/// 模型大约每 20 ms 出一拍状态。读得比这更碎，只为少在声卡缓冲里多等。
+const HOP: Duration = Duration::from_millis(5);
+const RMS_WINDOW: usize = 20;
+const FAST_WINDOW: usize = 6;
 
 pub struct Capture {
     stop: Arc<AtomicBool>,
     dead: Arc<AtomicBool>,
     latest: Arc<Mutex<Option<Sample>>>,
+    beat: Arc<BeatCtl>,
 }
 
 impl Capture {
@@ -30,17 +39,50 @@ impl Capture {
         let stop = Arc::new(AtomicBool::new(false));
         let dead = Arc::new(AtomicBool::new(false));
         let latest = Arc::new(Mutex::new(None));
+        let beat = BeatCtl::new();
         let flag = stop.clone();
         let died = dead.clone();
         let slot = latest.clone();
+        let beats = beat.clone();
         thread::Builder::new()
             .name("hi-my-light-audio".into())
             .spawn(move || {
-                run(flag, slot, monitor);
+                run(flag, slot, beats, monitor);
                 died.store(true, Ordering::Relaxed);
             })
             .map_err(|err| Error::Backend(err.to_string()))?;
-        Ok(Self { stop, dead, latest })
+        Ok(Self {
+            stop,
+            dead,
+            latest,
+            beat,
+        })
+    }
+
+    pub fn set_beat(&self, on: bool) {
+        self.beat.set_on(on);
+    }
+
+    pub fn beat_ready(&self) -> bool {
+        self.beat.ready()
+    }
+
+    pub fn beat_error(&self) -> Option<String> {
+        self.beat.error()
+    }
+
+    pub fn clear_beat(&self, seq: u64) {
+        let mut slot = self.latest.lock().expect("audio slot");
+        if let Some(sample) = slot.as_mut() {
+            if sample.seq == seq {
+                sample.downbeat = false;
+                sample.beat = false;
+            }
+        }
+    }
+
+    pub fn reset_beat(&self) {
+        self.beat.request_reset();
     }
 
     pub fn try_sample(&self) -> Result<Option<Sample>, Error> {
@@ -57,13 +99,21 @@ impl Drop for Capture {
     }
 }
 
-fn run(stop: Arc<AtomicBool>, latest: Arc<Mutex<Option<Sample>>>, mut monitor: String) {
+fn run(
+    stop: Arc<AtomicBool>,
+    latest: Arc<Mutex<Option<Sample>>>,
+    beat: Arc<BeatCtl>,
+    mut monitor: String,
+) {
     let mut stream = match open(&monitor) {
         Ok(stream) => stream,
         Err(_) => return,
     };
-    let mut buf = vec![0u8; chunk_bytes()];
+    let mut buf = vec![0u8; hop_bytes()];
     let mut checked = Instant::now();
+    let mut follow = BeatFollow::new(Arc::clone(&beat));
+    let mut seq = 0u64;
+    let mut meter = Meter::default();
 
     while !stop.load(Ordering::Relaxed) {
         if checked.elapsed() >= CHECK_SINK {
@@ -79,6 +129,7 @@ fn run(stop: Arc<AtomicBool>, latest: Arc<Mutex<Option<Sample>>>, mut monitor: S
         }
 
         if stream.read(&mut buf).is_err() {
+            follow.stall();
             thread::sleep(Duration::from_millis(40));
             match default_monitor().and_then(|name| {
                 monitor = name.clone();
@@ -86,20 +137,48 @@ fn run(stop: Arc<AtomicBool>, latest: Arc<Mutex<Option<Sample>>>, mut monitor: S
             }) {
                 Ok(next) => stream = next,
                 Err(_) => {
-                    store(&latest, Sample::default());
+                    store(&latest, Sample::default(), false);
                     thread::sleep(TICK);
                 }
             }
             continue;
         }
 
-        let rms = rms_bytes(&buf);
-        store(&latest, Sample { rms, loud: false });
+        let (rms, rms_fast) = meter.push(&buf);
+        let (_fast, downbeat, beat_hit, beat_lag_ms) = follow.feed(&buf);
+        seq = seq.wrapping_add(1);
+        let latch = beat.on.load(Ordering::Relaxed);
+        store(
+            &latest,
+            Sample {
+                rms,
+                loud: false,
+                seq,
+                rms_fast,
+                downbeat,
+                beat: beat_hit,
+                beat_lag_ms,
+            },
+            latch,
+        );
     }
 }
 
-fn store(latest: &Mutex<Option<Sample>>, sample: Sample) {
-    *latest.lock().expect("audio slot") = Some(sample);
+fn store(latest: &Mutex<Option<Sample>>, sample: Sample, latch: bool) {
+    let mut slot = latest.lock().expect("audio slot");
+    let (downbeat, beat) = if latch {
+        (
+            sample.downbeat || slot.as_ref().is_some_and(|prev| prev.downbeat),
+            sample.beat || slot.as_ref().is_some_and(|prev| prev.beat),
+        )
+    } else {
+        (false, false)
+    };
+    *slot = Some(Sample {
+        downbeat,
+        beat,
+        ..sample
+    });
 }
 
 fn open(monitor: &str) -> Result<Simple, Error> {
@@ -111,7 +190,7 @@ fn open(monitor: &str) -> Result<Simple, Error> {
     if !spec.is_valid() {
         return Err(Error::Backend("采样格式无效".into()));
     }
-    let fragsize = chunk_bytes() as u32;
+    let fragsize = hop_bytes() as u32;
     let attr = BufferAttr {
         maxlength: fragsize * 4,
         tlength: u32::MAX,
@@ -132,24 +211,49 @@ fn open(monitor: &str) -> Result<Simple, Error> {
     .map_err(|err| Error::Backend(format!("打开 {monitor}: {err}")))
 }
 
-fn chunk_bytes() -> usize {
-    let frames = (RATE as u64 * TICK.as_millis() as u64 / 1000) as usize;
+fn hop_bytes() -> usize {
+    let frames = (RATE as u64 * HOP.as_millis() as u64 / 1000) as usize;
     frames * CHANNELS as usize * 4
 }
 
-fn rms_bytes(bytes: &[u8]) -> f32 {
-    let mut n = 0u32;
+#[derive(Default)]
+struct Meter {
+    hops: std::collections::VecDeque<(f32, u32)>,
+}
+
+impl Meter {
+    /// 每小块立刻进来。对外的响度仍是最近 100 ms，快响度是最近 30 ms。
+    fn push(&mut self, bytes: &[u8]) -> (f32, f32) {
+        self.hops.push_back(energy(bytes));
+        while self.hops.len() > RMS_WINDOW {
+            self.hops.pop_front();
+        }
+        let rms = mix(self.hops.iter().copied());
+        let skip = self.hops.len().saturating_sub(FAST_WINDOW);
+        let rms_fast = mix(self.hops.iter().copied().skip(skip));
+        (rms, rms_fast)
+    }
+}
+
+fn energy(bytes: &[u8]) -> (f32, u32) {
     let mut sum = 0.0f32;
+    let mut n = 0u32;
     for chunk in bytes.chunks_exact(4) {
         let sample = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
         sum += sample * sample;
         n += 1;
     }
-    if n == 0 {
-        0.0
-    } else {
-        (sum / n as f32).sqrt()
+    (sum, n)
+}
+
+fn mix(hops: impl Iterator<Item = (f32, u32)>) -> f32 {
+    let mut sum = 0.0f32;
+    let mut n = 0u32;
+    for (energy, count) in hops {
+        sum += energy;
+        n += count;
     }
+    if n == 0 { 0.0 } else { (sum / n as f32).sqrt() }
 }
 
 fn default_monitor() -> Result<String, Error> {
@@ -157,12 +261,15 @@ fn default_monitor() -> Result<String, Error> {
     use libpulse_binding::mainloop::standard::{IterateResult, Mainloop};
     use libpulse_binding::operation::State as OpState;
 
-    let mut mainloop = Mainloop::new().ok_or_else(|| Error::Backend("无法创建 Pulse 主循环".into()))?;
+    let mut mainloop =
+        Mainloop::new().ok_or_else(|| Error::Backend("无法创建 Pulse 主循环".into()))?;
     let mut context = Context::new(&mainloop, "hi-my-light-sink")
         .ok_or_else(|| Error::Backend("无法创建 Pulse 上下文".into()))?;
     context
         .connect(None, FlagSet::NOFLAGS, None)
-        .map_err(|err| Error::Backend(err.to_string().unwrap_or_else(|| "Pulse 连接失败".into())))?;
+        .map_err(|err| {
+            Error::Backend(err.to_string().unwrap_or_else(|| "Pulse 连接失败".into()))
+        })?;
 
     loop {
         match mainloop.iterate(false) {
@@ -224,11 +331,6 @@ mod live {
                 max = max.max(sample.rms);
             }
         }
-        assert!(
-            max > 0.01,
-            "capture rms={max:.5}; monitor should have PCM"
-        );
+        assert!(max > 0.01, "capture rms={max:.5}; monitor should have PCM");
     }
 }
-
-

@@ -17,7 +17,23 @@ use super::slider::{self, Fill};
 use super::{HomeView, RearPane, tabs};
 
 pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
-    let (on, level, speed, look, solid, effect, rms, loud, audio_caption, sensitivity, dynamic) = {
+    let (
+        on,
+        level,
+        speed,
+        look,
+        solid,
+        effect,
+        rms,
+        loud,
+        audio_caption,
+        sensitivity,
+        dynamic,
+        beat,
+        beat_label,
+        follow_beat,
+        beat_lit,
+    ) = {
         let snap = this.service.read(cx);
         (
             snap.rear.on,
@@ -31,6 +47,10 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
             snap.audio_caption(),
             snap.audio_sensitivity.percent(),
             snap.audio_dynamic,
+            snap.audio_beat,
+            snap.audio_beat_label(),
+            snap.audio_follow_beat,
+            snap.audio_beat_lit,
         )
     };
     let motion = this.rear_pane == RearPane::Motion;
@@ -77,6 +97,8 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
             right,
             motion,
             audio,
+            follow_beat,
+            beat_lit,
             cx,
         ))
         .when(!audio, |col| {
@@ -156,7 +178,8 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
                 }),
                 cx,
             ))
-            .child(dynamic_sense_btn(dynamic, cx))
+            .child(audio_toggles(dynamic, beat, beat_label, cx))
+            .child(beat_range_btn(cx))
         })
         .child(
             div()
@@ -178,30 +201,90 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
         )
 }
 
-fn dynamic_sense_btn(on: bool, cx: &mut Context<HomeView>) -> impl IntoElement {
+fn audio_toggles(
+    dynamic: bool,
+    beat: bool,
+    beat_label: &'static str,
+    cx: &mut Context<HomeView>,
+) -> impl IntoElement {
     div()
-        .id("rear-dynamic-sense")
         .flex_none()
-        .h(px(40.))
+        .flex()
         .w_full()
+        .border_t_1()
+        .border_color(rgb(LINE))
+        .child(audio_toggle(
+            "rear-dynamic-sense",
+            "动态灵敏",
+            dynamic,
+            false,
+            cx.listener(|this, _, _, cx| {
+                this.service.update(cx, |service, cx| {
+                    service.toggle_audio_dynamic();
+                    cx.notify();
+                });
+            }),
+        ))
+        .child(audio_toggle(
+            "rear-beat",
+            beat_label,
+            beat,
+            true,
+            cx.listener(|this, _, _, cx| {
+                this.service.update(cx, |service, cx| {
+                    service.toggle_audio_beat();
+                    cx.notify();
+                });
+            }),
+        ))
+}
+
+fn beat_range_btn(cx: &mut Context<HomeView>) -> impl IntoElement {
+    div()
+        .id("rear-beat-range")
+        .flex_none()
+        .flex()
+        .w_full()
+        .h(px(40.))
+        .items_center()
+        .justify_center()
+        .border_t_1()
+        .border_color(rgb(LINE))
+        .cursor_pointer()
+        .hover(|s| s.bg(rgb(HOVER)))
+        .text_xs()
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_color(rgb(STONE))
+        .child("节拍范围")
+        .on_click(cx.listener(|this, _, _, cx| {
+            this.beat_open = true;
+            cx.notify();
+        }))
+}
+
+fn audio_toggle(
+    id: &'static str,
+    label: &'static str,
+    on: bool,
+    split: bool,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .flex_1()
+        .h(px(40.))
         .cursor_pointer()
         .flex()
         .justify_center()
         .items_center()
-        .border_t_1()
-        .border_color(rgb(LINE))
+        .when(split, |d| d.border_l_1().border_color(rgb(LINE)))
         .when(on, |d| d.bg(rgb(PAPER)))
         .hover(|s| if on { s } else { s.bg(rgb(HOVER)) })
         .text_xs()
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .text_color(if on { rgb(INK) } else { rgb(STONE) })
-        .child("动态灵敏")
-        .on_click(cx.listener(|this, _, _, cx| {
-            this.service.update(cx, |service, cx| {
-                service.toggle_audio_dynamic();
-                cx.notify();
-            });
-        }))
+        .child(label)
+        .on_click(on_click)
 }
 
 fn pane_tabs(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
@@ -219,6 +302,7 @@ fn pane_tabs(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
             cx.listener(|this, _, _, cx| {
                 this.rear_pane = RearPane::Solid;
                 this.hsv_open = false;
+                this.beat_open = false;
                 let solid = this.service.read(cx).rear.solid;
                 let (h, s, _) = solid.hsv();
                 if s > 0.04 {
@@ -238,6 +322,7 @@ fn pane_tabs(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
             cx.listener(|this, _, _, cx| {
                 this.rear_pane = RearPane::Motion;
                 this.hsv_open = false;
+                this.beat_open = false;
                 let effect = this.service.read(cx).rear.effect;
                 this.effect_group = effect.group();
                 this.service.update(cx, |service, cx| {
@@ -254,6 +339,7 @@ fn pane_tabs(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
             cx.listener(|this, _, _, cx| {
                 this.rear_pane = RearPane::Audio;
                 this.hsv_open = false;
+                this.beat_open = false;
                 this.service.update(cx, |service, cx| {
                     service.show_rear_audio();
                     cx.notify();
@@ -272,6 +358,8 @@ fn readout(
     right: String,
     motion: bool,
     audio: bool,
+    follow_beat: bool,
+    beat_lit: bool,
     cx: &mut Context<HomeView>,
 ) -> impl IntoElement {
     let row = div()
@@ -309,15 +397,7 @@ fn readout(
                                     .text_color(rgb(STONE))
                                     .child("音频"),
                             )
-                            .child(
-                                div()
-                                    .mt_1()
-                                    .text_size(px(72.))
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .line_height(px(64.))
-                                    .text_color(rgb(glow))
-                                    .child(right),
-                            ),
+                            .child(status_line(right, glow, follow_beat, beat_lit)),
                     )
                     .child(metric(
                         "灵敏",
@@ -360,6 +440,24 @@ fn readout(
                     }),
             )
     }
+}
+
+/// 节拍亮着时只显示「节拍」；节拍暗着时显示「暂缓」。字号与亮度跟原来的状态字一样。
+fn status_line(caption: String, glow: u32, follow: bool, lit: bool) -> impl IntoElement {
+    let (text, color) = if follow && lit {
+        ("节拍", PAPER)
+    } else if follow {
+        ("暂缓", MIST)
+    } else {
+        (caption.as_str(), glow)
+    };
+    div()
+        .mt_1()
+        .text_size(px(72.))
+        .font_weight(gpui::FontWeight::BOLD)
+        .line_height(px(64.))
+        .text_color(rgb(color))
+        .child(text.to_string())
 }
 
 fn metric(
@@ -443,6 +541,7 @@ pub fn hsv_popover(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElem
             MouseButton::Left,
             cx.listener(|this, _, _, cx| {
                 this.hsv_open = false;
+                this.beat_open = false;
                 this.end_drag(cx);
                 cx.notify();
             }),
@@ -484,6 +583,7 @@ pub fn hsv_popover(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElem
                             .child("关闭")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.hsv_open = false;
+                                this.beat_open = false;
                                 this.end_drag(cx);
                                 cx.notify();
                             })),
@@ -503,6 +603,151 @@ pub fn hsv_popover(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElem
                         .child(format!("H {:.0}°", this.sv_hue))
                         .child(format!("S {:.0}%", sat * 100.0))
                         .child(format!("V {:.0}%", val * 100.0)),
+                ),
+        )
+}
+
+pub fn beat_popover(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
+    let (quiet_secs, quiet_pct, loud_secs, loud_pct, always, response_ms) = {
+        let snap = this.service.read(cx);
+        (
+            snap.beat_quiet_secs,
+            snap.beat_quiet_pct,
+            snap.beat_loud_secs,
+            snap.beat_loud_pct,
+            snap.beat_always,
+            snap.beat_response_ms,
+        )
+    };
+    let response = match response_ms {
+        Some(ms) => format!("{ms} ms"),
+        None => "—".into(),
+    };
+    div()
+        .id("beat-veil")
+        .absolute()
+        .inset_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .bg(tone(INK, 0.62))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _, _, cx| {
+                this.beat_open = false;
+                this.end_drag(cx);
+                cx.notify();
+            }),
+        )
+        .child(
+            div()
+                .id("beat-window")
+                .w(px(360.))
+                .px_5()
+                .py_5()
+                .border_1()
+                .border_color(rgb(LINE))
+                .bg(rgb(PANEL))
+                .shadow(vec![gpui::BoxShadow {
+                    color: gpui::hsla(0., 0., 0., 0.5),
+                    offset: gpui::point(px(0.), px(8.)),
+                    blur_radius: px(24.),
+                    spread_radius: px(0.),
+                    inset: false,
+                }])
+                .flex()
+                .flex_col()
+                .gap_4()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_mouse_move(|_, _, cx| cx.stop_propagation())
+                .child(
+                    div().flex().w_full().items_center().justify_end().child(
+                        div()
+                            .id("beat-done")
+                            .px_2()
+                            .py_1()
+                            .cursor_pointer()
+                            .text_xs()
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .border_1()
+                            .border_color(rgb(LINE))
+                            .text_color(rgb(STONE))
+                            .hover(|s| s.bg(rgb(HOVER)).text_color(rgb(PAPER)))
+                            .child("关闭")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.beat_open = false;
+                                this.end_drag(cx);
+                                cx.notify();
+                            })),
+                    ),
+                )
+                .child(slider::row(
+                    "暂缓时间",
+                    format!("{:.0} 秒", quiet_secs),
+                    Track::BeatQuietTime,
+                    (quiet_secs - 1.0) / 29.0,
+                    Fill::Solid(PAPER),
+                    cx,
+                ))
+                .child(slider::row(
+                    "暂缓比例",
+                    format!("{:.0}%", quiet_pct),
+                    Track::BeatQuietPct,
+                    quiet_pct / 100.0,
+                    Fill::Solid(MIST),
+                    cx,
+                ))
+                .child(slider::row(
+                    "正在播放时间",
+                    format!("{:.0} 秒", loud_secs),
+                    Track::BeatLoudTime,
+                    (loud_secs - 1.0) / 29.0,
+                    Fill::Solid(PAPER),
+                    cx,
+                ))
+                .child(slider::row(
+                    "正在播放比例",
+                    format!("{:.0}%", loud_pct),
+                    Track::BeatLoudPct,
+                    loud_pct / 100.0,
+                    Fill::Solid(PAPER),
+                    cx,
+                ))
+                .child(
+                    div()
+                        .id("beat-always")
+                        .h(px(40.))
+                        .w_full()
+                        .cursor_pointer()
+                        .flex()
+                        .justify_center()
+                        .items_center()
+                        .border_1()
+                        .border_color(rgb(LINE))
+                        .when(always, |d| d.bg(rgb(PAPER)))
+                        .hover(|s| if always { s } else { s.bg(rgb(HOVER)) })
+                        .text_xs()
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(if always { rgb(INK) } else { rgb(STONE) })
+                        .child("一直启用节拍")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.service.update(cx, |service, cx| {
+                                service.toggle_beat_always();
+                                cx.notify();
+                            });
+                        })),
+                )
+                .child(
+                    div()
+                        .w_full()
+                        .pt_1()
+                        .flex()
+                        .justify_between()
+                        .text_xs()
+                        .font_family("monospace")
+                        .text_color(rgb(STONE))
+                        .child("响应")
+                        .child(response),
                 ),
         )
 }
@@ -602,17 +847,13 @@ fn paint_sv(bounds: Bounds<Pixels>, hue: f32, sat: f32, val: f32, window: &mut W
 
 fn audio_meter(rms: f32, fill_color: u32) -> impl IntoElement {
     let fill = ((rms / 0.25).clamp(0.0, 1.0) * 100.0).round() as f32 / 100.0;
-    div()
-        .flex_none()
-        .w_full()
-        .pb_6()
-        .child(
-            div()
-                .w_full()
-                .h(px(8.))
-                .bg(rgb(TRACK))
-                .child(div().h_full().w(relative(fill)).bg(rgb(fill_color))),
-        )
+    div().flex_none().w_full().pb_6().child(
+        div()
+            .w_full()
+            .h(px(8.))
+            .bg(rgb(TRACK))
+            .child(div().h_full().w(relative(fill)).bg(rgb(fill_color))),
+    )
 }
 
 fn presets(look: RearLook, cx: &mut Context<HomeView>) -> impl IntoElement {

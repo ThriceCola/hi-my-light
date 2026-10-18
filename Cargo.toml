@@ -44,6 +44,7 @@ gpui = { git = "https://github.com/zed-industries/zed", rev = "b7b1d1a2c78baae9d
 image = "0.25"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+beatnet-rs = "0.1.0"
 
 
 [build-dependencies]

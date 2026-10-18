@@ -1,9 +1,9 @@
 use gpui::{
-    Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement,
-    Styled, Subscription, Window, div, prelude::*, px, rgb,
+    Context, Entity, InteractiveElement, IntoElement, ParentElement, Render,
+    StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::*, px, rgb,
 };
 
-use crate::chrome::{brand, disconnecting_overlay, frame, titlebar, TitleDrag};
+use crate::chrome::{TitleDrag, brand, disconnecting_overlay, frame, titlebar};
 use crate::devices::DevicesView;
 use crate::home::HomeView;
 use crate::service::LampService;
@@ -80,7 +80,12 @@ impl ShellView {
         cx.notify();
     }
 
-    fn choose_close(&mut self, preference: ClosePreference, window: &mut Window, cx: &mut Context<Self>) {
+    fn choose_close(
+        &mut self,
+        preference: ClosePreference,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.remember_close {
             self.service.update(cx, |service, cx| {
                 service.set_close_preference(preference);
@@ -111,12 +116,17 @@ impl TitleDrag for ShellView {
 }
 
 fn os_should_close(_window: &mut Window, cx: &mut gpui::App) -> bool {
-    let Some(service) = cx.try_global::<workspace::Workspace>().map(|ws| ws.service.clone()) else {
+    let Some(service) = cx
+        .try_global::<workspace::Workspace>()
+        .map(|ws| ws.service.clone())
+    else {
         return true;
     };
     match service.read(cx).close_preference {
         ClosePreference::Ask => {
-            if let Some(handle) = cx.try_global::<workspace::Workspace>().and_then(|ws| ws.window.clone())
+            if let Some(handle) = cx
+                .try_global::<workspace::Workspace>()
+                .and_then(|ws| ws.window.clone())
             {
                 let _ = handle.update(cx, |shell, _, cx| shell.show_close_prompt(cx));
             }
@@ -257,12 +267,7 @@ fn close_dialog(
                         .cursor_pointer()
                         .on_click(toggle_remember)
                         .child(check_box(remember))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(rgb(STONE))
-                                .child("记住选择"),
-                        ),
+                        .child(div().text_xs().text_color(rgb(STONE)).child("记住选择")),
                 )
                 .child(
                     div()

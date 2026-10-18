@@ -98,11 +98,26 @@ mod tests {
 
     #[test]
     fn captured_presets() {
-        assert_eq!(Cct::from_kelvin(3000).frame().hex(), "7e 07 05 02 64 00 02 01 ef");
-        assert_eq!(Cct::from_kelvin(4000).frame().hex(), "7e 07 05 02 4b 19 02 01 ef");
-        assert_eq!(Cct::from_kelvin(4500).frame().hex(), "7e 07 05 02 32 32 02 01 ef");
-        assert_eq!(Cct::from_kelvin(5000).frame().hex(), "7e 07 05 02 19 4b 02 01 ef");
-        assert_eq!(Cct::from_kelvin(6000).frame().hex(), "7e 07 05 02 00 64 02 01 ef");
+        assert_eq!(
+            Cct::from_kelvin(3000).frame().hex(),
+            "7e 07 05 02 64 00 02 01 ef"
+        );
+        assert_eq!(
+            Cct::from_kelvin(4000).frame().hex(),
+            "7e 07 05 02 4b 19 02 01 ef"
+        );
+        assert_eq!(
+            Cct::from_kelvin(4500).frame().hex(),
+            "7e 07 05 02 32 32 02 01 ef"
+        );
+        assert_eq!(
+            Cct::from_kelvin(5000).frame().hex(),
+            "7e 07 05 02 19 4b 02 01 ef"
+        );
+        assert_eq!(
+            Cct::from_kelvin(6000).frame().hex(),
+            "7e 07 05 02 00 64 02 01 ef"
+        );
     }
 
     #[test]

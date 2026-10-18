@@ -9,9 +9,7 @@ use std::time::Duration;
 
 use uuid::Uuid;
 
-use hi_my_light::{
-    BleError, BleManager, Brightness, Channel, Clock, Level, Power, Query, Rgb,
-};
+use hi_my_light::{BleError, BleManager, Brightness, Channel, Clock, Level, Power, Query, Rgb};
 
 const TARGET_CHAR_UUID: &str = "0000fff3-0000-1000-8000-00805f9b34fb";
 
@@ -43,10 +41,7 @@ async fn pick_device(manager: &BleManager) -> anyhow::Result<btleplug::api::BDAd
         for (i, d) in devices.iter().enumerate() {
             println!("  {}. {}", i + 1, d.display_name());
         }
-        let input = read_line!(
-            "\n选择设备编号 (1-{}), Enter 刷新, q 退出: ",
-            devices.len()
-        );
+        let input = read_line!("\n选择设备编号 (1-{}), Enter 刷新, q 退出: ", devices.len());
         match input.as_str() {
             "q" | "quit" => anyhow::bail!("已取消"),
             "" => tokio::time::sleep(Duration::from_secs(2)).await,

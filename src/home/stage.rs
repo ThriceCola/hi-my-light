@@ -8,8 +8,8 @@ use gpui::{
 use crate::chrome::connecting_overlay;
 use crate::lamp::RearLook;
 
-use super::preview::{self, LampPreview};
 use super::HomeView;
+use super::preview::{self, LampPreview};
 
 const STAGE_H: f32 = 176.0;
 
@@ -30,6 +30,8 @@ pub fn render_stage(
         phase: 0.0,
         audio_loud: snap.audio_loud,
         audio_rms: snap.audio_rms,
+        audio_beat: snap.audio_follow_beat,
+        audio_length: if snap.audio_beat_lit { 1.0 } else { 0.0 },
     };
     let playing = preview.rear_on && matches!(preview.rear, RearLook::Play(_) | RearLook::Audio);
     let period = preview::period_ms(preview.rear, snap.rear.speed.percent());
@@ -47,6 +49,8 @@ pub fn render_stage(
     let rear = preview.rear;
     let audio_loud = preview.audio_loud;
     let audio_rms = preview.audio_rms;
+    let audio_beat = preview.audio_beat;
+    let audio_length = preview.audio_length;
 
     div()
         .id("stage")
@@ -62,41 +66,38 @@ pub fn render_stage(
                 .relative()
                 .size_full()
                 .overflow_hidden()
-                .child(
-                    div()
-                        .id("halo-paint")
-                        .size_full()
-                        .with_animation(
-                            ("lamp-preview", anim_key),
-                            Animation::new(Duration::from_millis(period)).repeat(),
-                            move |this, delta| {
-                                this.child(
-                                    canvas(
-                                        |_, _, _| {},
-                                        move |bounds, _, window, _| {
-                                            preview::paint(
-                                                bounds,
-                                                LampPreview {
-                                                    aspect,
-                                                    front_on,
-                                                    front_level,
-                                                    front_kelvin,
-                                                    rear_on,
-                                                    rear_level,
-                                                    rear,
-                                                    phase: if playing { delta } else { 0.0 },
-                                                    audio_loud,
-                                                    audio_rms,
-                                                },
-                                                window,
-                                            );
+                .child(div().id("halo-paint").size_full().with_animation(
+                    ("lamp-preview", anim_key),
+                    Animation::new(Duration::from_millis(period)).repeat(),
+                    move |this, delta| {
+                        this.child(
+                            canvas(
+                                |_, _, _| {},
+                                move |bounds, _, window, _| {
+                                    preview::paint(
+                                        bounds,
+                                        LampPreview {
+                                            aspect,
+                                            front_on,
+                                            front_level,
+                                            front_kelvin,
+                                            rear_on,
+                                            rear_level,
+                                            rear,
+                                            phase: if playing { delta } else { 0.0 },
+                                            audio_loud,
+                                            audio_rms,
+                                            audio_beat,
+                                            audio_length,
                                         },
-                                    )
-                                    .size_full(),
-                                )
-                            },
-                        ),
-                )
+                                        window,
+                                    );
+                                },
+                            )
+                            .size_full(),
+                        )
+                    },
+                ))
                 .when(connecting, |stage| stage.child(connecting_overlay())),
         )
 }

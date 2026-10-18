@@ -42,13 +42,7 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
                 .items_center()
                 .when(i != last, |d| d.border_r_1().border_color(rgb(LINE)))
                 .when(active, |d| d.bg(rgb(PAPER)))
-                .hover(|s| {
-                    if active {
-                        s
-                    } else {
-                        s.bg(rgb(HOVER))
-                    }
-                })
+                .hover(|s| if active { s } else { s.bg(rgb(HOVER)) })
                 .text_xs()
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_color(if active { rgb(INK) } else { rgb(STONE) })

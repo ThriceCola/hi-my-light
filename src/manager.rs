@@ -233,7 +233,10 @@ impl BleManager {
     }
 
     /// 按地址断开，包括本 Manager 没记着、但适配器上仍占着的连接。
-    pub async fn disconnect_address(&self, address: &btleplug::api::BDAddr) -> Result<(), BleError> {
+    pub async fn disconnect_address(
+        &self,
+        address: &btleplug::api::BDAddr,
+    ) -> Result<(), BleError> {
         {
             let mut guard = self.connected.lock().await;
             let matches = guard.as_ref().is_some_and(|p| p.address() == *address);

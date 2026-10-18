@@ -13,11 +13,7 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
             snap.front.cct.kelvin(),
         )
     };
-    let glow = if on {
-        glow_from_kelvin(kelvin)
-    } else {
-        LINE
-    };
+    let glow = if on { glow_from_kelvin(kelvin) } else { LINE };
 
     div()
         .id("kelvin-readout")
