@@ -228,11 +228,7 @@ fn audio_settings(
         .child(beat_toggle(beat, beat_label, cx))
 }
 
-fn beat_toggle(
-    beat: bool,
-    label: &'static str,
-    cx: &mut Context<HomeView>,
-) -> impl IntoElement {
+fn beat_toggle(beat: bool, label: &'static str, cx: &mut Context<HomeView>) -> impl IntoElement {
     let ink = if beat { INK } else { STONE };
     div()
         .flex_1()
@@ -284,7 +280,7 @@ fn beat_toggle(
                 .text_xs()
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_color(rgb(ink))
-                .child("节拍范围")
+                .child("范围")
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.beat_open = true;
                     cx.notify();
