@@ -27,9 +27,9 @@ impl Default for BeatRule {
     fn default() -> Self {
         Self {
             quiet_secs: 7.0,
-            quiet_pct: 100.0,
+            quiet_pct: 95.0,
             loud_secs: 7.0,
-            loud_pct: 45.0,
+            loud_pct: 85.0,
             always: false,
         }
     }

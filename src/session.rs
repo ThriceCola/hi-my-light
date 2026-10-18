@@ -106,11 +106,11 @@ fn default_beat_secs() -> u8 {
 }
 
 fn default_quiet_pct() -> u8 {
-    100
+    95
 }
 
 fn default_loud_pct() -> u8 {
-    45
+    85
 }
 
 impl Default for FrontSnap {
