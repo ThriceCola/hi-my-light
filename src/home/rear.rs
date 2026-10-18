@@ -178,8 +178,7 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
                 }),
                 cx,
             ))
-            .child(audio_toggles(dynamic, beat, beat_label, cx))
-            .child(beat_range_btn(cx))
+            .child(audio_settings(dynamic, beat, beat_label, cx))
         })
         .child(
             div()
@@ -201,7 +200,7 @@ pub fn render(this: &HomeView, cx: &mut Context<HomeView>) -> impl IntoElement {
         )
 }
 
-fn audio_toggles(
+fn audio_settings(
     dynamic: bool,
     beat: bool,
     beat_label: &'static str,
@@ -212,6 +211,7 @@ fn audio_toggles(
         .flex()
         .w_full()
         .border_t_1()
+        .border_b_1()
         .border_color(rgb(LINE))
         .child(audio_toggle(
             "rear-dynamic-sense",
@@ -225,41 +225,71 @@ fn audio_toggles(
                 });
             }),
         ))
-        .child(audio_toggle(
-            "rear-beat",
-            beat_label,
-            beat,
-            true,
-            cx.listener(|this, _, _, cx| {
-                this.service.update(cx, |service, cx| {
-                    service.toggle_audio_beat();
-                    cx.notify();
-                });
-            }),
-        ))
+        .child(beat_toggle(beat, beat_label, cx))
 }
 
-fn beat_range_btn(cx: &mut Context<HomeView>) -> impl IntoElement {
+fn beat_toggle(
+    beat: bool,
+    label: &'static str,
+    cx: &mut Context<HomeView>,
+) -> impl IntoElement {
+    let ink = if beat { INK } else { STONE };
     div()
-        .id("rear-beat-range")
-        .flex_none()
-        .flex()
-        .w_full()
+        .flex_1()
         .h(px(40.))
-        .items_center()
-        .justify_center()
-        .border_t_1()
+        .flex()
+        .border_l_1()
         .border_color(rgb(LINE))
-        .cursor_pointer()
-        .hover(|s| s.bg(rgb(HOVER)))
-        .text_xs()
-        .font_weight(gpui::FontWeight::SEMIBOLD)
-        .text_color(rgb(STONE))
-        .child("节拍范围")
-        .on_click(cx.listener(|this, _, _, cx| {
-            this.beat_open = true;
-            cx.notify();
-        }))
+        .when(beat, |d| d.bg(rgb(PAPER)))
+        .child(
+            div()
+                .id("rear-beat")
+                .flex_1()
+                .h_full()
+                .cursor_pointer()
+                .flex()
+                .justify_center()
+                .items_center()
+                .hover(|s| if beat { s } else { s.bg(rgb(HOVER)) })
+                .text_xs()
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(rgb(ink))
+                .child(label)
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.service.update(cx, |service, cx| {
+                        service.toggle_audio_beat();
+                        cx.notify();
+                    });
+                })),
+        )
+        .child(
+            div()
+                .flex_none()
+                .self_center()
+                .w(px(1.))
+                .h(px(28.))
+                .bg(rgb(if beat { MIST } else { STONE })),
+        )
+        .child(
+            div()
+                .id("rear-beat-range")
+                .flex_none()
+                .h_full()
+                .px_3()
+                .cursor_pointer()
+                .flex()
+                .justify_center()
+                .items_center()
+                .hover(|s| s.bg(rgb(if beat { 0xE4E4E7 } else { HOVER })))
+                .text_xs()
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(rgb(ink))
+                .child("节拍范围")
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.beat_open = true;
+                    cx.notify();
+                })),
+        )
 }
 
 fn audio_toggle(
